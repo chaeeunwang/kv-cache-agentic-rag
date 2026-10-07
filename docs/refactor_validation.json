@@ -152,7 +152,68 @@
   "verification": {
     "baseline_scenarios": 8,
     "baseline_checks": 5,
-    "after_refactor": "pending",
-    "pdf_limit": "pending"
-  }
+    "after_refactor": "8 graph scenarios and 5 additional checks exactly match baseline.",
+    "pdf_limit": {
+      "boundary_pages": [
+        10,
+        11
+      ],
+      "overlength_preserves_existing_files": true,
+      "normal": {
+        "model_calls": 1,
+        "pages": 1,
+        "published": true
+      },
+      "report_context_unchanged": true,
+      "shortened": {
+        "model_calls": 2,
+        "pages": 1,
+        "published": true
+      },
+      "second_shortening": {
+        "model_calls": 3,
+        "pages": 1,
+        "published": true
+      },
+      "exhausted": {
+        "model_calls": 3,
+        "published": false
+      }
+    },
+    "after_refactor_sha256": "c1b8c9542cf7efa846fb6b6f657b71801fed66dd79fa281ef85ac019a04f1efd",
+    "report_input": "Model context, token settings, citation IDs and output schema preserved; report length instructions are the sole prompt addition.",
+    "integration_smoke": {
+      "tests_directory_present": false,
+      "next": "FINISH",
+      "eval_result": {
+        "passed": true,
+        "groundedness": true,
+        "neutrality": true,
+        "bias_control": true,
+        "coverage": true,
+        "issues": [],
+        "retry_instruction": "",
+        "perspectives": []
+      },
+      "eval_retry_count": 1,
+      "pdf_pages": 1,
+      "calls": {
+        "technical": 1,
+        "search": 24,
+        "web": 12,
+        "domain": 1,
+        "synthesis": 1,
+        "report": 2,
+        "judge": 2
+      },
+      "feedback_reaches_second_report": true
+    },
+    "integration_matches_before": true,
+    "python_syntax_files": 69,
+    "limitations": [
+      "Model and search responses were substituted; live API output quality was not evaluated.",
+      "Deleted tests and .env.example were preserved as local deletions and excluded from commits."
+    ]
+  },
+  "verified_code_commit": "41e04ed5bd9ac14c498b8051d34889f4457ed6da"
 }
