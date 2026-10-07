@@ -2,9 +2,11 @@
 
 import os
 from pathlib import Path
+from tempfile import TemporaryDirectory
 from xml.sax.saxutils import escape
 
 from markdown_it import MarkdownIt
+from pypdf import PdfReader
 from reportlab.lib import colors
 from reportlab.lib.enums import TA_LEFT
 from reportlab.lib.pagesizes import A4
@@ -14,6 +16,15 @@ from reportlab.pdfbase.ttfonts import TTFont
 from reportlab.platypus import Paragraph, SimpleDocTemplate, Spacer
 
 RESULT_DIR = Path(__file__).resolve().parents[3] / "result"
+MAX_REPORT_PAGES = 10
+
+
+class ReportLengthError(ValueError):
+    """실제 렌더링된 PDF가 제출 분량을 초과한 경우."""
+
+    def __init__(self, pages: int):
+        self.pages = pages
+        super().__init__(f"보고서가 {pages}쪽으로 {MAX_REPORT_PAGES}쪽 제한을 초과했습니다.")
 
 
 def write_report(markdown: str, output: Path) -> None:
@@ -85,7 +96,7 @@ def save_report_pdf(
     report_markdown: str,
     report_evidence_ids: list[str],
 ) -> Path:
-    """인용 ID가 본문에 있는지 확인한 뒤 보고서 파일을 저장한다."""
+    """인용 ID와 렌더링한 PDF의 페이지 수를 확인한 뒤 최종 파일을 저장한다."""
     missing_ids = [
         evidence_id
         for evidence_id in report_evidence_ids
@@ -94,5 +105,15 @@ def save_report_pdf(
     if missing_ids:
         raise ValueError("보고서에 누락된 근거 ID: " + ", ".join(missing_ids))
 
-    write_report(report_markdown, RESULT_DIR)
+    # 실제 제출물과 동일한 렌더러로 검사한다. 초과 초안은 기존 최종 파일을 덮어쓰지 않는다.
+    RESULT_DIR.mkdir(parents=True, exist_ok=True)
+    with TemporaryDirectory(prefix=".report-candidate-", dir=RESULT_DIR) as directory:
+        candidate = Path(directory)
+        write_report(report_markdown, candidate)
+        with (candidate / "report.pdf").open("rb") as stream:
+            pages = len(PdfReader(stream).pages)
+        if pages > MAX_REPORT_PAGES:
+            raise ReportLengthError(pages)
+        (candidate / "report.md").replace(RESULT_DIR / "report.md")
+        (candidate / "report.pdf").replace(RESULT_DIR / "report.pdf")
     return RESULT_DIR / "report.pdf"

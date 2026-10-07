@@ -1,13 +1,18 @@
 """검증된 에이전트 결과로 Markdown과 PDF 보고서를 생성한다."""
 
 import json
+import logging
 import re
 
 from config import settings
 from config.model import get_chat_model
-from service.agent.report.pdf import save_report_pdf
-from service.agent.report.prompt import REPORT_SYSTEM_PROMPT
+from service.agent.report.pdf import ReportLengthError, save_report_pdf
+from service.agent.report.prompt import REPORT_LENGTH_PROMPT, REPORT_SYSTEM_PROMPT, shortening_instruction
 from service.schema.state import GraphState
+
+logger = logging.getLogger(__name__)
+# PDF 분량 초과 시에만 적용하며 Supervisor의 품질 재시도 예산과는 별개다.
+MAX_LENGTH_RETRIES = 2
 
 RESULT_FIELDS = (
     "technical_result",
@@ -49,22 +54,28 @@ def report_agent(state: GraphState) -> dict:
     model = get_chat_model(max_tokens=settings.report_max_tokens)
     context = _build_report_context(state)
 
-    response = model.invoke(
-        [
-            (
-                "system",
-                f"{REPORT_SYSTEM_PROMPT}\n\n보고서 작성 자료:\n"
-                f"{json.dumps(context, ensure_ascii=False)}",
-            )
-        ]
+    source_message = (
+        "system",
+        f"{REPORT_SYSTEM_PROMPT}\n\n{REPORT_LENGTH_PROMPT}\n\n보고서 작성 자료:\n"
+        f"{json.dumps(context, ensure_ascii=False)}",
     )
-    report_markdown = str(response.content).strip()
-    # 전체 후보가 아니라 보고서 본문에서 실제 인용한 ID만 최종 State에 저장한다.
-    report_evidence_ids = _used_evidence_ids(report_markdown, context["allowed_evidence_ids"])
-    # Markdown 저장과 PDF 변환은 출력 모듈에 위임한다.
-    save_report_pdf(report_markdown, report_evidence_ids)
-
-    return {
-        "report_markdown": report_markdown,
-        "report_evidence_ids": report_evidence_ids,
-    }
+    messages = [source_message]
+    for attempt in range(MAX_LENGTH_RETRIES + 1):
+        response = model.invoke(messages)
+        report_markdown = str(response.content).strip()
+        report_evidence_ids = _used_evidence_ids(report_markdown, context["allowed_evidence_ids"])
+        try:
+            save_report_pdf(report_markdown, report_evidence_ids)
+        except ReportLengthError as error:
+            logger.warning("보고서 분량 초과: pages=%s, 축약 재시도=%s/%s",
+                           error.pages, attempt, MAX_LENGTH_RETRIES)
+            if attempt == MAX_LENGTH_RETRIES:
+                raise
+            # 초안 이력을 누적하지 않고 원자료와 직전 초안, 실측 분량만 전달한다.
+            messages = [source_message, ("assistant", report_markdown),
+                        ("human", shortening_instruction(error.pages))]
+        else:
+            return {
+                "report_markdown": report_markdown,
+                "report_evidence_ids": report_evidence_ids,
+            }

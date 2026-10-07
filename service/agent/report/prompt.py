@@ -1,3 +1,6 @@
+from service.agent.report.pdf import MAX_REPORT_PAGES
+
+
 REPORT_SYSTEM_PROMPT = ("""
 당신은 KV cache 최적화 기술의 다관점 평가 보고서를 작성하는 에이전트다.
 
@@ -147,3 +150,27 @@ REPORT_SYSTEM_PROMPT = ("""
 
 최종 출력은 보고서 Markdown 본문만 반환한다.
 """.strip())
+
+
+REPORT_LENGTH_PROMPT = f"""
+[필수 분량 제한]
+- SUMMARY, 본문, 표, REFERENCE를 모두 포함하여 A4 PDF 최대 {MAX_REPORT_PAGES}쪽 이내로 작성한다.
+- 출력 렌더러는 A4, 본문 9.5pt, 줄간격 15pt, 좌우 여백 42pt, 상하 여백 38/42pt를 사용한다.
+- 제목, 문단 간격, 긴 출처 ID와 URL의 줄바꿈도 페이지를 차지한다. 8쪽 안팎을 목표로 여유를 둔다.
+- 네 관점과 두 기술의 평가, 중요한 실험 조건과 한계, SUMMARY 및 REFERENCE는 유지한다.
+- 반복 설명과 긴 서론을 줄이고 핵심 근거를 선별한다. 같은 문서의 서지는 묶되 실제 사용한 근거 ID는 보존한다.
+- 분량을 줄이려고 필수 관점이나 불리한 근거를 누락하거나 출처 ID를 임의로 줄이지 않는다.
+- 입력에 없는 사실이나 근거를 추가하지 않는다. 최종 출력은 완전한 보고서 Markdown 본문만 반환한다.
+""".strip()
+
+
+def shortening_instruction(pages: int) -> str:
+    """실측 분량을 바탕으로 이전 보고서 전체를 축약하도록 지시한다."""
+    return (
+        f"직전 보고서를 실제 PDF로 렌더링한 결과 {pages}쪽으로 "
+        f"최대 {MAX_REPORT_PAGES}쪽 제한을 초과했습니다. "
+        "제목, SUMMARY, 네 관점과 두 기술, 주요 근거와 한계, REFERENCE를 유지하면서 "
+        "반복 서술과 불필요한 인용을 줄여 8쪽 안팎을 목표로 전체 보고서를 다시 작성하세요. "
+        "삭제한 인용만 REFERENCE에서 제거하고 남은 근거 ID는 정확히 유지하세요. "
+        "수정 설명이나 일부 발췌가 아닌 전체 Markdown 보고서만 반환하세요."
+    )
