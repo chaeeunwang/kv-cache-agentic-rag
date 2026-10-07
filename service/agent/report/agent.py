@@ -34,6 +34,10 @@ def report_agent(state: GraphState) -> dict:
         "results": results,
         "allowed_evidence_ids": sorted(evidence_ids),
     }
+    # 품질 평가 미달로 재작업하는 경우 이전 보고서의 미달 사항을 함께 전달한다.
+    verdict = state.get("eval_result")
+    if verdict and not verdict["passed"]:
+        context["evaluation_feedback"] = verdict["feedback"]
 
     response = model.invoke(
         [
