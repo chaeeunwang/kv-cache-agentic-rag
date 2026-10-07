@@ -4,9 +4,12 @@ from collections.abc import Mapping
 from dataclasses import dataclass
 from typing import Any, Literal
 
-# 한도는 프롬프트가 아니라 코드 상수로 강제한다.
+# 일반 관점 재작업과 보고서 FAIL 이후 재작업은 별도 예산이다.
+# MAX_REWORK_PER_AGENT는 일반 error/partial 재작업에만 적용한다.
+# FAIL 경로는 MAX_EVAL_RETRY를 사용하므로 같은 관점의 누적 재작업은 2회가 될 수 있다.
 MAX_REWORK_PER_AGENT = 1
 MAX_EVAL_RETRY = 1
+# 조사/재작업을 중단하는 결정 횟수 기준이며, 마무리 노드는 이후에도 실행할 수 있다.
 MAX_STEPS = 20
 
 FINISH = "FINISH"
