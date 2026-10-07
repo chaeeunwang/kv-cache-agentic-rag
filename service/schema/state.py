@@ -4,6 +4,8 @@ from typing import Literal, NotRequired, TypedDict
 
 from pydantic import BaseModel, ConfigDict, Field
 
+from service.schema.control import SupervisorControl
+
 
 class Technology(TypedDict):
     id: str
@@ -60,7 +62,7 @@ class AgentResult(TypedDict):
     limitations: list[str]
 
 
-class GraphState(TypedDict):
+class GraphState(SupervisorControl):
     # 실행 중 바뀌지 않는 공통 입력
     request: str
     target_domain: str
@@ -71,12 +73,12 @@ class GraphState(TypedDict):
     market_result: NotRequired[AgentResult]
     stakeholder_result: NotRequired[AgentResult]
     domain_result: NotRequired[AgentResult]
-    synthesis_result: NotRequired[AgentResult]
+    synthesis_result: NotRequired[AgentResult | None]
     # 종합 평가가 남긴 피드백과 전체 재작업 횟수
     quality_feedback: list[str]
     revision_count: int
     # 보고서 생성 노드의 최종 출력
-    report_markdown: NotRequired[str]
+    report_markdown: NotRequired[str | None]
     report_evidence_ids: NotRequired[list[str]]
 
 
