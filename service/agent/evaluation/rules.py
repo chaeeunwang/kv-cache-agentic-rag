@@ -141,7 +141,8 @@ def check_groundedness(state: GraphState, report: str, min_ratio: float) -> Rule
         feedback.append(f"3~4장 주장 {len(uncited)}건에 근거 인용이 없습니다. 근거를 붙이거나 근거 부족을 명시하세요.")
         targets.append("report")
 
-    missing_in_reference = sorted(cited_set & allowed - set(extract_citations(reference)))
+    # REFERENCE는 'ID: 서지' 목록처럼 대괄호 없이 쓰는 경우가 있어 ID 문자열 포함 여부로 판정한다.
+    missing_in_reference = sorted(eid for eid in cited_set & allowed if eid not in reference)
     if missing_in_reference:
         reasons.append(f"REFERENCE에 없는 본문 인용 {len(missing_in_reference)}건")
         feedback.append("본문에서 인용한 근거 ID를 REFERENCE에 모두 수록하세요: " + ", ".join(missing_in_reference[:5]))

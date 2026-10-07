@@ -147,6 +147,12 @@ def test_groundedness_fails_when_reference_misses_cited_id():
     assert outcome.details["missing_in_reference"] == ["domain_hw_01_e1", "domain_sw_01_e1"]
 
 
+def test_groundedness_accepts_bare_ids_in_reference():
+    report = GOOD_REPORT.replace("- 논문 C [domain_sw_01_e1] [domain_hw_01_e1]", "- domain_sw_01_e1: 논문 C\n- domain_hw_01_e1: ibid.")
+    outcome = check_groundedness(make_state(report), report, min_ratio=0.7)
+    assert outcome.details["missing_in_reference"] == []
+
+
 def test_groundedness_flags_dangling_finding_evidence():
     market = result("market")
     market["findings"][0]["evidence_ids"] = ["ghost_e1"]
