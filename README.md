@@ -172,12 +172,18 @@ Groundedness는 출처 추적과 인용 형식을 검사하며, 원문이 주장
 ├── database/                   # 전처리 산출물 및 임베딩 입력
 ├── docs/                       # 원본 논문/설계 문서/작업 기록
 ├── ingest/                     # PDF 전처리/임베딩/인덱스 생성
+│   ├── preprocess/             # PDF 추출, 정제, 소절 분리 및 청킹
+│   └── embedding/              # 임베딩 모델, 문서 로딩 및 FAISS 인덱스 저장
 ├── scripts/                    # 실행 및 점검 스크립트
 ├── service/
 │   ├── agent/
 │   │   ├── graph/              # 전체 Agent 조립 및 기술 조사 서브그래프
 │   │   ├── supervisor/         # 라우팅 정책, 경로 선택 Judge, 그래프 배선, 지시 전달
 │   │   ├── node/               # 기술/시장/이해관계자/도메인 평가
+│   │   │   ├── technical/      # 기술 분석, 논문 검색, 프롬프트 및 내부 State
+│   │   │   ├── domain/         # 도메인 분석 모델, 노드 및 검색
+│   │   │   ├── market.py       # 시장 평가 노드
+│   │   │   └── stakeholder.py  # 이해관계자 평가 노드
 │   │   ├── tavily/             # 웹 검색, 질의 템플릿, 근거 검증
 │   │   ├── synthesis/          # 네 관점 결과 종합
 │   │   ├── report/             # 보고서 작성 및 Markdown/PDF 저장
@@ -185,9 +191,11 @@ Groundedness는 출처 추적과 인용 형식을 검사하며, 원문이 주장
 │   ├── retrieval/              # 공통 논문 인덱스 로딩과 검색
 │   └── schema/                 # 제어 State와 작업 결과 형식
 ├── run_agent.py                # 전체 그래프 실행 진입점
+├── check_domain.py             # API 호출 없는 도메인 노드 점검
+├── .env.example                # 환경변수 설정 예시
 ├── pyproject.toml              # Python 프로젝트 설정
 ├── uv.lock                     # 의존성 잠금 파일
-├── result/                     # 보고서/최종 State/평가 회차별 상세 JSON
+├── result/                     # 실행 시 생성되는 보고서/최종 State/평가 상세 JSON
 └── README.md
 ```
 
