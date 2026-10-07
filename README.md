@@ -1,145 +1,160 @@
 # Subject
 
-KV cache 최적화 기술을 소프트웨어·하드웨어에서 각각 선정하고, 기술·시장·이해관계자·도메인 관점에서 비교 평가하는 **Agentic RAG** 프로젝트입니다. 논문과 웹 자료를 근거로 **데이터센터·클라우드 LLM 서빙** 환경의 적용 조건과 한계를 정리합니다.
+본 프로젝트는 KV cache 최적화 기술을 소프트웨어·하드웨어에서 각각 선정하고, 기술·시장·이해관계자·도메인 관점에서 비교 평가하는 Agentic RAG 프로젝트입니다. 논문과 웹 자료를 근거로 데이터센터·클라우드 장문맥 LLM 질의응답 서빙 환경의 적용 조건과 한계를 정리합니다. 기술과 도메인은 사람이 확정했습니다.
 
 ## Overview
 
-- **Objective**: 두 기술을 동일한 평가 관점으로 분석하고, 관점 간 일치점·상충점·불확실성을 도출합니다. 특정 기술의 우열이나 추천은 하지 않습니다.
-- **Method**: Multi-Agent 병렬 평가 + Agentic RAG 기반 검색·재검색 + 품질 피드백에 따른 재작업.
-- **Tools**: 논문 검색 도구(`paper_search`, FAISS), Tavily 웹 검색, Markdown·PDF 보고서 생성.
+- Objective: 두 기술을 동일한 평가 관점으로 분석하고, 관점 간 일치점·상충점·불확실성을 도출합니다. 특정 기술의 우열이나 추천은 하지 않습니다.
+- **Pattern**: Supervisor Pattern. 기술·시장·이해관계자·도메인별 전문 Agent를 두고, 중앙 Supervisor가 현재 State를 확인해 다음 실행 노드를 동적으로 선택합니다. 하위 Agent 간 직접 통신은 하지 않고 모든 작업 결과는 Supervisor로 반환합니다.
+- **동적 처리**: Supervisor의 코드 규칙이 현재 State를 바탕으로 실행 후보와 기본값을 정하고, 후보가 여러 개일 때만 LLM이 후보 안에서 하나를 선택합니다. 최초 실행은 기술 → 시장 → 이해관계자 → 도메인 순서이며, 이후 근거 충분성과 품질 평가 결과에 따라 재작업 경로가 달라집니다. 하위 Agent는 순차 실행되며 작업 후 Supervisor로 돌아옵니다. 기술 조사 내부의 논문 재검색은 기본 2회, 보고서 FAIL 후 수정·재조사 경로 선택은 최대 1회입니다.
+- **선정 도메인**: 데이터센터·클라우드 환경의 장문맥 LLM 질의응답 서빙. 기업 내부의 긴 보고서와 기술 문서 묶음을 활용하는 다중 사용자 서비스를 대표 시나리오로 삼습니다.
+- **도메인 선정 이유**: 장문맥과 동시 요청으로 KV-cache 용량·메모리 대역폭·데이터 이동 병목이 뚜렷해, 두 기술의 효과를 성능·비용·전력·운영 관점에서 함께 평가할 수 있습니다.
 - **평가 기준일**: 2026-09-21. 이후의 사실은 반영하지 않습니다.
-
-## Selected Domain
-
-- **선정 도메인**: 데이터센터/클라우드 환경의 장문맥 LLM 질의응답 서빙
-- **대표 시나리오**: 기업 내부의 긴 보고서와 기술 문서 묶음을 활용하는 다중 사용자 질의응답 서비스
-- **선정 이유**: 장문맥과 동시 요청으로 발생하는 KV-cache 용량, 메모리 대역폭, 데이터 이동 병목이 뚜렷해 MLA의 저장량 절감과 CXL-PNM의 메모리 확장 효과를 성능, 비용, 전력, 운영 관점에서 함께 평가할 수 있습니다.
 
 ## Selected Technologies
 
-- **SW — DeepSeek-V2 MLA (Multi-head Latent Attention)**: KV를 저차원 잠재 표현으로 저장하는 어텐션 구조입니다. 메모리 절감 효과와 모델·서빙 구조 변경에 따른 도입 부담을 함께 평가하기 위해 선정했습니다.
+- **SW — DeepSeek-V2 MLA (Multi-head Latent Attention)**: Key와 Value를 저차원 잠재 표현으로 저장하는 어텐션 구조입니다. KV-cache 메모리 절감 효과와 모델·서빙 구조 변경에 따른 도입 부담을 함께 평가하기 위해 선정했습니다.
 - **HW — CXL-PNM (CXL 기반 Processing-Near-Memory)**: CXL 메모리 근처에서 KV cache 관련 연산을 수행하는 구조입니다. 데이터 이동 감소 효과와 장치·시스템 구성 비용을 함께 평가하기 위해 선정했습니다.
 
-두 기술은 같은 KV-cache 병목을 각각 **데이터 표현 구조**와 **연산 위치**를 바꿔 푸는 근본적 재설계입니다. 이 대칭성 때문에 같은 서비스 도메인에서 효과·비용·호환성·성숙도를 비교할 수 있습니다. 기술과 도메인은 사람이 확정했습니다(Human 기반 선정).
-
-| 비교 항목 | DeepSeek MLA | CXL-PNM |
-|---|---|---|
-| 변경 계층 | 모델의 어텐션 구조 | 하드웨어의 메모리·연산 배치 |
-| 직접 완화 대상 | KV-cache 저장량과 HBM 사용 | 외부 메모리 사용 시 데이터 이동과 GPU 병목 |
-| 주요 도입 부담 | 모델 구조 변경과 지원 소프트웨어 | 전용 장치와 시스템 통합 |
+두 기술은 같은 KV-cache 병목을 각각 데이터 표현 구조와 연산 위치를 바꿔 해결합니다. 이러한 대칭성을 바탕으로 같은 서비스 도메인에서 효과·비용·호환성·성숙도를 비교합니다.
 
 ## Features
 
-- **논문 RAG**: 허용 문서 6편 126쪽(200쪽 한도)을 manifest로 관리합니다. PDF를 페이지·소절 단위로 추출·정제한 뒤 400토큰 이내로 청킹하고(청크 467개), 원본 확인이 필요한 16개를 제외한 451개를 BGE-M3 임베딩·FAISS로 색인합니다.
-- **다관점 평가**: 기술 조사 결과를 바탕으로 시장·이해관계자·도메인 평가를 병렬로 수행합니다. 세 노드는 서로 다른 State 필드만 갱신하므로 reducer 없이 병렬 실행됩니다.
-- **재검색·품질 피드백**: 기술 근거가 부족하면 **미충족 기술의 논문만** 수정 질의로 재검색합니다(기본 2회). 평가 종합은 보완할 항목을 `quality_feedback`으로 정리합니다.
-- **출처 추적**: 근거 ID와 원문 발췌는 LLM이 아니라 **검색 결과에서 코드가 생성**합니다. 모든 주장은 실제로 수집한 근거 ID를 참조해야 하며, 알 수 없는 ID를 참조한 주장은 제외하거나 오류로 처리합니다. 미확인 항목은 한계로 남깁니다.
-- **공개정보 기반 TRL**: TRL은 단계·범위, 기준일, 신뢰도, 미확인 조건을 담은 구조(`trl_assessment`)로 기록하며, 공식 인증이 아닌 추정임을 명시합니다.
-- **확증 편향 방지 전략**
-  - 시장·이해관계자 모듈은 모든 기준을 **긍정·부정 질의 쌍**으로 검색합니다. 한쪽 방향만 빈약하면 그 방향만 보강 검색하고, 그래도 한쪽 근거뿐이면 "일방적 근거"로 기록합니다.
-  - 주장마다 사실·의견·전망(`claim_type`)과 직접·연관(`scope`)을 구분합니다. 주장과 근거에 기술 고유어가 없으면 연관 시장으로, 기준일 이후 연도·전망 표현이 있으면 전망으로 **코드가 교정**합니다.
-  - 소셜미디어·개인 블로그만 인용한 근거는 시장성 판단에 세지 않고, 학술 자료만으로는 상용화·도입·투자를 판단하지 않습니다.
-  - 근거가 부족하면 판단을 유보하고, 서로 다른 실험 조건의 수치를 직접 순위화하지 않습니다.
-- **실측 기반 규칙 보강**: 실제 API 실측에서 LLM이 연관 시장 전망을 대상 기술의 사실로 쓰거나, 근거를 한꺼번에 붙이거나, 입력 문서의 수치를 무관한 근거에 붙이는 문제가 나타났습니다. 이를 칸(기술×기준) 단위 호출, 근거 개수 상한, 짧은 참조키, 코드 생성 요약 같은 규칙으로 막았습니다.
-- **보고서 생성**: 관점별 평가·공개 정보 기반 TRL 추정·참고문헌을 Markdown과 PDF로 정리합니다.
-- **보고서 품질 평가 (Hybrid = 1안 룰베이스 + 2안 LLM Judge)**: 보고서가 생성되면 반드시 `report_evaluator` 노드를 거쳐 Supervisor로 돌아갑니다. 4개 항목 중 하나라도 미달이면 Supervisor가 FAIL 분석으로 재작업 대상을 골라 1회 재시도합니다.
-
-  | 평가 항목 | 방식 | 판정 기준 |
-  |---|---|---|
-  | Groundedness | 1안 룰베이스 | 본문 인용 ID가 모두 실제 수집 근거인지, 3~4장 주장 단위의 인용 비율 ≥ 70%, 본문 인용이 REFERENCE에 수록됐는지, 관점별 finding이 자기 근거만 참조하는지 |
-  | 관점 커버리지 | 1안 룰베이스 | 기술 성숙도·시장성·이해관계자·도메인 결과가 State에 있고 `error`가 아니며 두 기술을 모두 다루는지, 보고서에 SUMMARY·3.1~3.4·REFERENCE 목차가 있는지 |
-  | 중립성 | 2안 LLM Judge | 기술 추천·우열/순위 판정·조건이 다른 수치의 직접 비교가 없는지 (1~5점, 3점 이상 통과) |
-  | 편향 통제 | 2안 LLM Judge | 단일 출처 의존·유리한 근거 편중·한계 근거 누락이 없는지 (인용 근거의 출처 목록을 함께 제공, 1~5점, 3점 이상 통과) |
-
-  - **판정과 제어의 분리**: 평가 노드는 판정만 하고 재시도 여부·대상·횟수는 Supervisor가 정합니다. 표현 문제(중립성, 인용 표기)만 미달이면 보고서를 다시 쓰고, 근거 문제(Groundedness·편향 통제·커버리지)이면 `perspectives`에 적힌 관점을 재조사합니다. 재시도는 `eval_retry_count` 1회로 제한하고, 그래도 미달이면 미달 항목을 `warning`에 남기고 종료합니다.
-  - **제어 vs 페이로드**: State의 `eval_result`에는 항목별 통과 여부(bool)·`issues`(수정 지시)·`retry_instruction`(미달 요약)·`perspectives`(보강 관점)만 둡니다. 점수·사유·위반 문장·미인용 주장 등 상세 진단은 `trace_id`와 함께 `result/eval_{n}.json`에 저장해 체크포인트가 커지지 않게 합니다.
-  - **확장 지점**: 출처 분포·stance 분포 같은 룰 기반 보조 신호를 Judge 입력에 넣을 수 있도록 `build_judge_signals()`를 남겨두었습니다(현재 비활성, 판정은 LLM Judge 단독).
+- **PDF 자료 기반 논문 RAG**: 허용 문서 6편·126쪽을 manifest로 관리합니다. PDF를 페이지·소절 단위로 추출·정제한 뒤 400토큰 이내로 청킹합니다. 총 467개 청크 중 원본 확인이 필요한 16개를 제외한 451개를 임베딩·색인합니다.
+- **Supervisor 기반 다관점 평가**: 기술·시장·이해관계자·도메인별 전문 Agent가 각 관점의 평가를 수행합니다. Supervisor는 현재 State를 확인해 필요한 Agent를 선택하고, 하위 Agent의 결과를 다시 전달받아 다음 경로를 결정합니다. 하위 Agent 간 직접 통신은 하지 않습니다.
+- **재검색 및 출처 추적**: 기술 조사 내부에서 근거가 부족하면 해당 기술의 논문을 수정 질의로 재검색합니다. 근거 ID와 원문 발췌는 검색 결과에서 코드가 생성하며, 수집하지 않은 근거 ID를 참조한 주장은 제외하거나 오류로 처리합니다. 미확인 항목은 한계로 남깁니다.
+- **공개 정보 기반 TRL 추정**: 단계·범위, 기준일, 신뢰도, 미확인 조건을 구조화해 기록하며, 공식 인증이 아닌 추정임을 명시합니다.
+- **확증 편향 방지 전략**: 시장·이해관계자 평가의 모든 기준을 긍정·부정 질의 쌍으로 검색하고, 빈약한 방향만 보강 검색합니다. 사실·의견·전망과 직접·연관 근거를 구분하며, 소셜미디어·개인 블로그만으로 시장성을 판단하거나 학술 자료만으로 상용화·도입·투자를 판단하지 않습니다. 근거가 부족하면 판단을 유보하고, 서로 다른 실험 조건의 수치를 직접 순위화하지 않습니다.
+- **보고서 품질 평가**: 생성된 보고서는 Hybrid 방식으로 평가합니다. Groundedness와 관점 커버리지는 규칙 기반 검사로 확인하고, 중립성과 편향 통제는 별도 모델의 LLM Judge가 평가합니다. 네 항목이 모두 통과해야 PASS입니다. 최신 판정과 수정 지시는 `eval_result`에, 항목별 점수·사유·위반 문장 등 상세 진단은 `result/eval_1.json`, `result/eval_2.json`에 저장합니다.
+- **보고서 생성**: Synthesis Agent가 네 관점의 일치점·상충점·적용 조건·불확실성을 종합한 뒤, Report Agent가 Markdown과 PDF를 생성합니다. 보고서는 품질 평가 전에 파일로 저장되므로 경고 종료 시에도 마지막 보고서가 남을 수 있으며, 파일 존재 여부와 품질 PASS 여부는 별도로 확인합니다.
 
 ## Tech Stack
 
-| 구분 | 구성 |
-|---|---|
-| Language | Python 3.11–3.12 |
-| Framework | LangGraph, LangChain |
-| LLM / Generator | `gpt-4.1-mini` 기본값 (`OPENAI_MODEL`, 기술 조사는 `TECHNICAL_MODEL`) |
-| LLM / Judge | 보고서 품질 평가 `gpt-4.1` (`JUDGE_MODEL`, temperature 0). 생성 모델과 분리해 자기 출력 선호 편향을 줄임 |
-| Retrieval | FAISS `IndexFlatIP`, cosine 유사도. 기술별(sw·hw) 인덱스와 공통 문서 인덱스를 합쳐 top-5. `needs_review` 청크는 기본 제외 |
-| Retrieval Metrics | 임베딩 선정 실험(설계서 2.7): BGE-M3 dev Recall@5 75.0%·MRR@10 0.651, test Recall@5 83.3%·MRR@10 0.681 |
-| Embedding | `BAAI/bge-m3` (1,024차원 dense, L2 정규화) — Sentence Transformers |
-| Web Search | Tavily |
-| Output | Markdown, PDF |
-
-Retrieval Metrics는 초기 문서 2편·123청크와 한국어 질문 40개(답변 가능 36개를 dev·test 18개씩)로 측정한 값입니다. 현재 6편·451청크 통합 인덱스 기준으로는 다시 측정하지 않았습니다.
-
-임베딩 모델은 같은 조건에서 3개 후보를 비교해 선정했습니다.
-
-| 모델 | dev Recall@5 | MRR@10 | 질의 p50 |
-|---|---|---|---|
-| **BAAI/bge-m3 (채택)** | 75.0% | 0.651 | 17.2ms |
-| Qwen3-Embedding-0.6B | 75.0% | 0.601 | 28.0ms |
-| multilingual-e5-large-instruct | 58.3% | 0.414 | 19.6ms |
-
-[임베딩·검색 안내](docs/EMBEDDING_PIPELINE.md)에서 입력 형식과 인덱스 공유 방법을 확인할 수 있습니다.
+- **Language**: Python 3.11–3.12
+- **Framework**: LangGraph, LangChain
+- **LLM / Generator**: 공용 생성 모델의 기본값은 `gpt-4.1-mini`이며 `OPENAI_MODEL`로 설정합니다. 기술 조사 모델은 환경변수가 아닌 `service/agent/node/technical/model.py`의 `TECHNICAL_MODEL` 상수로 지정합니다(현재 `gpt-4.1-mini`).
+- **LLM / Judge**: 보고서 품질 Judge의 기본값은 `gpt-4.1`이며 `JUDGE_MODEL`로 설정합니다. Supervisor의 경로 선택용 LLM은 공용 생성 모델을 사용합니다. 보고서 Judge에는 보고서와 인용 출처의 제목·도메인·시점 등을 전달하며 원문 발췌와 주장 사이의 의미적 일치를 대조하는 Judge는 미적용입니다.
+- **Retrieval**: FAISS `IndexFlatIP`, cosine 유사도. 기술별 SW·HW 인덱스와 공통 문서 인덱스를 합쳐 top-5를 검색하며, `needs_review` 청크는 기본 제외합니다.
+- **Retrieval Metrics**: BGE-M3 dev Recall@5 75.0%·MRR@10 0.651, test Recall@5 83.3%·MRR@10 0.681. 초기 문서 2편·123청크와 한국어 질문 40개 중 답변 가능한 36개(dev·test 각각 18개)로 측정한 값이며, 현재 6편·451청크 통합 인덱스에서는 재측정하지 않았습니다.
+- **Embedding**: `BAAI/bge-m3` — Sentence Transformers 기반 1,024차원 dense 임베딩, L2 정규화. 동일 조건의 후보 비교에서 dev Recall@5와 MRR@10, 질의 지연을 고려해 선정했습니다.
+- **Web Search**: Tavily
+- **Observability**: LangSmith Tracing + Supervisor decision log
+- **Output**: Markdown, PDF, State JSON, 평가 회차별 상세 JSON
 
 ## Agents
 
-| 에이전트 | 역할 | 근거 |
-|---|---|---|
-| 기술 조사 | 원리·성능·한계·TRL을 분석하고 부족한 근거를 재검색 (서브그래프) | 논문 RAG |
-| 시장 평가 | 시장 규모·성장성, 상용화·채택, 생태계 평가 | Tavily + 기술 조사 근거 재인용 |
-| 이해관계자 평가 | 경쟁 기술 진영, 도입사·개발자, 투자 업계의 반응과 이해관계 분석 | Tavily + 기술 조사 근거 재인용 |
-| 도메인 평가 | 데이터센터·클라우드 서빙의 성능·비용·정확도·전력·확장성 평가 | 논문 RAG |
-| 평가 종합 | 네 평가의 일치점·상충점·적용 조건·불확실성을 정리하고 품질 점검 | 선행 에이전트 결과 |
-| 보고서 생성 | 평가 결과와 출처를 통합해 Markdown·PDF 보고서 작성 | 종합 결과와 인용 목록 |
+- **Supervisor**: 현재 State를 확인해 다음 실행 대상과 종료 경로를 결정합니다. 이미 결과가 있는 관점의 재작업 횟수, 보고서 품질 평가 결과, 반복 가드 등을 함께 관리합니다.
+- **Technical Agent**: SW·HW 기술의 원리, 성능, 한계 및 공개 정보 기반 TRL을 평가합니다. 근거가 부족하면 기술 조사 내부 서브그래프에서 논문을 재검색합니다.
+- **Market Agent**: 시장 규모, 성장성, 상용화 및 기술 채택 동향을 평가합니다.
+- **Stakeholder Agent**: 개발사, 도입 기업, 경쟁 기술 진영, 투자 업계 등 주요 이해관계자의 관점을 분석합니다.
+- **Domain Agent**: 데이터센터·클라우드 장문맥 LLM 서빙 환경에서 성능, 비용, 전력, 확장성 등의 적용성을 평가합니다.
+- **Synthesis Agent**: 네 관점 결과와 기존 근거를 모아 일치점·상충점·적용 조건·불확실성을 종합합니다. 추가 외부 검색은 하지 않으며 `synthesis_result`, `quality_feedback`, 종합 실행 횟수인 `revision_count`를 갱신합니다.
+- **Report Agent**: 네 관점 결과와 종합 결과를 바탕으로 보고서를 작성하며, 허용 근거 ID를 입력에 명시합니다. 보고서 출력 토큰 한도는 `REPORT_MAX_TOKENS`로 설정하며 기본값은 16,384입니다.
+- **Report Evaluator**: Groundedness, 중립성, 편향 통제, 관점 커버리지를 평가해 PASS/FAIL을 판정하고, 문제점·수정 지시·관련 관점을 Supervisor에 전달합니다.
 
-시장·이해관계자 모듈의 근거 분류, 확증편향 방지 조치, 판단 유보 규칙은 [에이전트 안내](docs/MARKET_STAKEHOLDER_AGENT.md)를 참고하세요.
+## State Schema
+
+- **제어 vs 페이로드 분리**: 공통 작업 데이터와 관점별 결과·종합·보고서는 `GraphState`에서 관리하고, 라우팅·재작업·품질 판정·추적에 필요한 제어 정보는 `SupervisorControl`로 구분합니다. 기술 재검색에만 필요한 `technical_retry_count`, 수정 질의, 부족 항목, 조사 중 근거, 검색 실패 상태는 기술 조사 내부 State에 별도로 둡니다.
+- **관측성 위치**: State에는 최신 Supervisor 결정인 `decision` 한 건만 저장합니다. 결정 이력 전체는 `trace_id`, `step`, `next`, `reason`, `by`를 포함한 외부 결정 로그와 LangSmith Trace에서 확인하도록 분리해 State의 누적 증가를 막습니다.
+- **지속성 비용**: 역할별 결과, 최신 결정, 작업 지시는 새 결과로 덮어쓰고 결정 이력은 State에 누적하지 않습니다. FAISS 인덱스·청크·모델은 State 밖에서 관리합니다. 다만 근거 발췌와 보고서 본문, 기술 조사 중 누적 근거는 State에 포함되며 체크포인트 State의 명시적인 바이트 크기 상한은 두지 않습니다.
+- **상관**: `run_agent.py`에서 생성한 `trace_id`를 State, Supervisor 결정 로그, Checkpointer의 `thread_id`, 실행 메타데이터에 함께 사용해 동일 실행을 연결합니다. 이 `trace_id`는 프로젝트 내부 실행 연결 키이며 LangSmith 자체 run ID와 동일한 값이라는 의미는 아닙니다.
+- **재개/복구**: 그래프는 주입받은 Checkpointer로 컴파일하며 CLI에서는 `InMemorySaver`를 사용합니다. 결과 상태, 실패 정보, 재작업 카운터, 최신 결정이 체크포인트에 저장되고, 재작업 시 기존 `synthesis_result`와 `report_markdown`을 비워 오래된 하류 결과를 무효화합니다. 다만 체크포인트가 메모리 기반이므로 프로세스 종료 후 자동 재개되지는 않습니다.
+- **동시 처리**: Supervisor가 현재 State를 보고 하위 Agent 하나를 선택하고, 해당 작업이 끝난 뒤 다시 Supervisor로 돌아오는 방식입니다. 공유 필드를 갱신하는 노드가 동시에 실행되지 않으므로 Reducer 없이 기본 덮어쓰기를 사용합니다.
+- **반복 제어**: 일반 관점 재작업은 관점별 1회, 보고서 FAIL 재시도 경로 선택은 1회로 제한합니다. FAIL 경로에서는 관점별 재작업 한도를 다시 검사하지 않으므로 이미 재작업한 관점도 추가 호출될 수 있습니다. Supervisor의 20회 결정 가드는 재작업을 중단하고 종합·보고서로 진행시키는 기준이며 엄격한 총 실행 횟수 상한은 아닙니다. 전체 실행에는 별도의 `recursion_limit=60`을 적용합니다. 기술 재검색은 기본 2회(설정 범위 0~5)입니다. `revision_count`는 종합 완료 횟수이며 현재 Supervisor의 재시도 한도 판단에는 사용하지 않습니다.
+
+제어 필드는 다음과 같이 구분합니다.
+
+| 필드 | 역할 |
+|---|---|
+| `next` | Supervisor가 선택한 목적지. 조건부 엣지가 이 값을 읽어 이동 |
+| `step_count` | Supervisor 결정 횟수 |
+| `rework_counts` | technical·market·stakeholder·domain별 재작업 횟수 |
+| `eval_retry_count` | 보고서 FAIL 후 재시도 경로를 선택한 횟수 |
+| `decision` | 최신 목적지·이유·결정 주체(`rule`, `llm`, `guard`) |
+| `eval_result` | 네 품질 항목의 통과 여부, 문제점, 수정 지시, 관련 관점 |
+| `warning` | 경고 종료 사유와 미달 품질 항목 |
+| `trace_id` | State·로그·체크포인트·실행 메타데이터의 연결 키 |
 
 ## Architecture
 
-전체 흐름은 `service/agent/graph/agent.py`의 LangGraph 하나로 연결되며, `run_agent.py`로 실행합니다.
+### 전체 그래프
+
+`service/agent/graph/agent.py`가 실제 Agent들을 조립하고, `service/agent/supervisor/graph.py`가 아래 실행 경로를 연결합니다. Supervisor에서 나가는 점선은 `next`를 읽는 조건부 엣지이고, 돌아오는 실선은 고정 엣지입니다.
 
 ```mermaid
 flowchart TD
-    Input["선정 기술 · 적용 도메인"] --> Technical["기술 조사 · 논문 RAG"]
-    Technical -->|"근거 부족 · 재검색 한도 미만"| Technical
-    Technical --> Market["시장 평가 · 웹 검색"]
-    Technical --> Stakeholder["이해관계자 평가 · 웹 검색"]
-    Technical --> Domain["도메인 평가 · 논문 RAG"]
-    Market --> Synthesis["평가 종합 · 품질 점검"]
-    Stakeholder --> Synthesis
-    Domain --> Synthesis
-    Synthesis -->|"보완 필요 · 재작업 한도 미만"| Technical
-    Synthesis -->|"품질 충족 또는 재작업 한도 도달"| Report["보고서 생성"]
-    Report --> Output["Markdown · PDF · State JSON"]
+    START([START]) --> SUP[Supervisor]
+    SUP -. technical_agent .-> TECH[Technical Agent: 논문 RAG 서브그래프]
+    SUP -. market_node .-> MARKET[Market Agent: Tavily]
+    SUP -. stakeholder_node .-> STAKE[Stakeholder Agent: Tavily]
+    SUP -. domain_agent .-> DOMAIN[Domain Agent: 논문 RAG]
+    SUP -. synthesis_agent .-> SYN[Synthesis Agent]
+    TECH --> SUP
+    MARKET --> SUP
+    STAKE --> SUP
+    DOMAIN --> SUP
+    SYN --> SUP
+    SUP -. report_agent .-> REPORT[Report Agent: Markdown / PDF 저장]
+    REPORT --> EVAL[Report Evaluator: 규칙 + LLM Judge]
+    EVAL --> SUP
+    SUP -. FINISH .-> END([END])
+    SUP -. END_WARNING .-> WARN[end_with_warning]
+    WARN --> END
 ```
 
-- 기술 재검색 한도는 기본 2회이며 서브그래프에 구현되어 있습니다. 평가 종합의 품질 피드백이 있으면 기술 조사부터 한 번 재작업하며, 두 번째 종합에서도 피드백이 남으면 보고서 생성 전에 종료합니다.
-- 근거 부족은 `partial`과 한계로 남기고 진행합니다. 모델·도구 오류는 `error`로 기록하고 자동 무한 반복 없이 중단합니다.
-- 품질 점검이 사실 정확성을 보증하는 것은 아닙니다.
+Supervisor는 `decide(state)`로 후보를 만든 뒤, 후보가 여러 개일 때만 경로 선택 LLM을 호출합니다. LLM 오류나 후보 밖의 응답은 코드 기본값으로 대체합니다. 결정과 수정 지시를 State에 반영한 다음 `route_from_supervisor(state)`가 `state["next"]`를 반환해 이동합니다. `next` 필드 자체가 실행하는 것이 아니라 `add_conditional_edges`가 해당 값을 목적지에 매핑합니다.
+
+### 조사·재작업·보고서 흐름
+
+1. 결과가 없는 관점을 먼저 실행합니다. 기술 조사를 우선하며 초기 실행은 기술 → 시장 → 이해관계자 → 도메인 순서입니다.
+2. 네 관점이 모두 실행된 뒤 `error` 결과가 있고 재작업 예산이 남으면 해당 관점을 자동 재호출합니다. `partial` 결과는 Supervisor LLM이 보강 가능한 누락인지 판단해 재작업 또는 종합을 선택합니다. 공개 정보의 구조적 한계만으로 재작업하도록 요구하지 않습니다.
+3. 종합 결과가 있으면 보고서를 생성합니다. 종합이 `partial`이거나 피드백이 남았다는 이유로 보고서 생성을 차단하지 않습니다.
+4. 보고서 생성 후 반드시 품질 평가를 거쳐 Supervisor로 돌아옵니다. PASS면 `FINISH`, FAIL이면 보고서 수정 또는 관련 관점 재조사를 선택합니다. 표현·구성·인용 표기 문제는 보고서를 다시 쓰는 경로로 처리할 수 있습니다.
+5. 관점을 재호출할 때 `rework_counts`를 올리고 수정 지시를 `quality_feedback`에 넣습니다. 이전 종합과 보고서 본문은 비웁니다. 도메인·보고서 Agent에는 래퍼가 수정 지시를 입력 State 사본의 `request`에 덧붙입니다.
+6. FAIL 재시도를 사용한 뒤 다시 FAIL이면 `end_with_warning`으로 종료합니다. 마지막 보고서와 평가 결과는 남으며, 품질 통과로 간주하지 않습니다.
+
+### 기술 조사 서브그래프
+
+```mermaid
+flowchart LR
+    TS([START]) --> RET[retrieve: FAISS 검색]
+    RET -->|검색 성공| ANA[analyze: 분석 및 근거 검증]
+    RET -->|검색 실패| TE([END: error 반환])
+    ANA -->|partial이고 재검색 예산 남음| REWRITE[rewrite_queries: 질의 수정]
+    REWRITE --> RET
+    ANA -->|완료 또는 오류 또는 재검색 한도 도달| DONE([END: 결과 반환])
+```
+
+기술 서브그래프의 `END`는 부모 그래프 전체 종료가 아니라 Technical Agent 작업 완료를 의미하며, 부모 그래프에서는 Supervisor로 돌아옵니다. 시장·이해관계자 Agent는 Tavily로 기준별 긍정·부정 질의를 수행하고 부족한 방향을 보강하며, 수집·재인용 근거로 기술·기준별 구조화 분석을 수행합니다.
+
+### 보고서 품질 평가 기준
+
+| 항목 | 방식 | 실제 판정 기준 |
+|---|---|---|
+| Groundedness | 규칙 | 본문 인용 ID가 수집 근거에 존재하는지, 3~4장 주장 단위의 인용 비율이 기본 70% 이상인지, 본문 인용이 REFERENCE에 있는지, 관점 finding이 자기 evidence의 ID만 참조하는지 |
+| 관점 커버리지 | 규칙 | 네 관점에 오류 없는 finding이 있고 두 기술을 모두 다루는지, 필수 목차가 존재하는지. `partial` 자체는 실패 조건이 아님 |
+| 중립성 | LLM Judge | 루브릭에 따른 1~5점 평가에서 기본 3점 이상 |
+| 편향 통제 | LLM Judge | 루브릭에 따른 1~5점 평가에서 기본 3점 이상 |
+
+Groundedness는 출처 추적과 인용 형식을 검사하며, 원문이 주장을 실제로 뒷받침하는지까지 의미적으로 검증하지 않습니다. 현재 주장 단위는 3~4장의 문단 줄·목록 항목·표 데이터 행으로 추출하므로, 근거 부족을 밝힌 문장도 인용 없는 주장으로 계산될 수 있습니다. 기준값은 `GROUNDEDNESS_MIN_RATIO`, `JUDGE_PASS_SCORE`로 조정합니다.
+
+상세 판단은 `result/eval_<회차>.json`과 Supervisor 결정 로그에서 확인하고, LangSmith 추적을 활성화하면 실행 경로를 Trace에서 확인합니다.
 
 ## Directory Structure
 
 ```text
-├── docs/                         # 원본 논문·모듈 안내·작업 기록
-├── database/                     # 전처리 산출물 (pages·sections·chunks.jsonl, manifest.json), 임베딩 입력
-├── config/                       # API·모델·검색 설정
-├── ingest/
-│   ├── preprocess/              # PDF 추출·정제·소절 파싱·청킹
-│   └── embedding/               # chunks.jsonl 정규화·BGE-M3 임베딩·FAISS 인덱스 저장
-├── artifacts/faiss/              # FAISS 인덱스·청크 본문·메타데이터 (저장소에서 공유)
-├── service/
-│   ├── agent/graph/             # 기술 조사 서브그래프
-│   ├── agent/node/              # 기술 조사·시장·이해관계자·도메인 평가 노드
-│   ├── agent/tavily/            # 웹 검색·질의 템플릿·근거 검증
-│   ├── agent/synthesis/         # 평가 종합
-│   ├── agent/report/            # 보고서 생성
-│   ├── agent/evaluation/        # 보고서 품질 평가 (룰베이스·LLM Judge)
-│   ├── retrieval/               # 공통 논문 인덱스 로딩·검색
-│   └── schema/                  # 공통 State와 결과 형식
-├── tests/                       # 회귀 테스트와 검색 응답 fixture
-├── scripts/                     # 실제 API 점검 스크립트
-├── result/                      # 실행 결과 (state.json, report.md, report.pdf, eval_{n}.json)
-├── run_agent.py                 # 전체 그래프 실행 진입점
+├── artifacts/faiss/            # FAISS 인덱스·청크 본문·메타데이터
+├── config/                     # API·모델·검색 설정
+├── database/                   # 전처리 산출물 및 임베딩 입력
+├── docs/                       # 원본 논문·설계 문서·작업 기록
+├── ingest/                     # PDF 전처리·임베딩·인덱스 생성
+├── scripts/                    # 실행 및 점검 스크립트
+├── service/                    # Agent·Supervisor·Retrieval·Schema·Report 구현
+├── tests/                      # 회귀 및 그래프 테스트
+├── run_agent.py                # 전체 그래프 실행 진입점
+├── pyproject.toml              # Python 프로젝트 설정
+├── uv.lock                     # 의존성 잠금 파일
+├── result/                     # 보고서·최종 State·평가 회차별 상세 JSON
 └── README.md
 ```
 
@@ -148,64 +163,45 @@ flowchart TD
 Python 3.11–3.12와 `uv`가 필요합니다.
 
 ```bash
-git clone https://github.com/chaeeunwang/kv-cache-agentic-rag.git
-cd kv-cache-agentic-rag
 uv sync
 cp .env.example .env
+uv run run_agent.py
 ```
 
-`.env`에 `OPENAI_API_KEY`와 `TAVILY_API_KEY`를 입력합니다. 기술 조사 모델은 `service/agent/node/technical/model.py`의 `TECHNICAL_MODEL`, 다른 평가 모델은 `OPENAI_MODEL`로 설정합니다.
+실행 환경에 필요한 API Key와 LangSmith Tracing 설정은 `.env`에서 구성합니다.
 
-FAISS 인덱스(`artifacts/faiss/`)는 저장소에 포함되어 있어 별도 색인 없이 검색할 수 있습니다. 전처리 청크(`database/chunks.jsonl`)를 다시 만든 경우에만 인덱스를 재생성합니다. `needs_review=true` 청크는 기본적으로 제외되며, 원본 확인 뒤 `INCLUDE_REVIEW_CHUNKS=true`로 포함할 수 있습니다. 자세한 내용은 [임베딩·검색 안내](docs/EMBEDDING_PIPELINE.md)를 참고하세요.
+```dotenv
+OPENAI_API_KEY=발급받은_OpenAI_키
+TAVILY_API_KEY=발급받은_Tavily_키
+OPENAI_MODEL=gpt-4.1-mini
+JUDGE_MODEL=gpt-4.1
+REPORT_MAX_TOKENS=16384
+GROUNDEDNESS_MIN_RATIO=0.7
+JUDGE_PASS_SCORE=3
+LANGSMITH_TRACING=true
+LANGSMITH_API_KEY=발급받은_LangSmith_키
+LANGSMITH_PROJECT=프로젝트명
+LANGSMITH_ENDPOINT=https://api.smith.langchain.com
+# LANGSMITH_WORKSPACE_ID=워크스페이스_ID
+```
+
+`Settings`가 `.env`를 읽고 LangSmith 설정을 SDK가 사용하는 프로세스 환경변수로 전달합니다. `LANGSMITH_TRACING` 설정 시 `LANGCHAIN_TRACING_V2`도 같은 값으로 연결합니다.
 
 ```bash
-uv run -m ingest.embedding.build_index
+# 기술 내부 재검색 횟수와 평가 대상 도메인 변경
+uv run run_agent.py --max-technical-retries 2 --domain "데이터센터·클라우드 장문맥 LLM 서빙"
+
+# 보고서 평가 callable 지정
+uv run run_agent.py --evaluator service.agent.evaluation:report_evaluator
 ```
 
-전체 그래프를 실행하면 `result/`에 `state.json`, `report.md`, `report.pdf`를 저장합니다. OpenAI·Tavily API 비용이 발생합니다.
-
-```bash
-uv run run_agent.py --max-technical-retries 2
-```
-
-모듈별 확인은 다음과 같습니다.
-
-```bash
-uv run pytest -q                                                              # 회귀 테스트 (외부 API 없음)
-uv run check_domain.py                                                        # 도메인 평가 흐름 (Mock)
-uv run python scripts/tavily_live_check.py --technology hw_01 --perspective market   # 시장·이해관계자 실측 (API 비용 발생)
-```
+실행 후 `result/report.md`, `result/report.pdf`, `result/state.json`, `result/eval_<회차>.json`을 확인합니다. CLI는 품질 통과 여부 또는 경고 종료 사유와 함께 Supervisor 결정·재작업·FAIL 재시도 횟수를 출력합니다.
 
 ## Contributors
 
-- 박지원 : PDF Parsing, Preprocessing (추출·정제·소절 파싱·청킹·manifest)
-- 문진영 : Embedding, Retrieval (BGE-M3 임베딩·FAISS 인덱스·공용 검색)
-- 이중헌 : 기술 조사 Agent (논문 RAG 서브그래프·TRL 추정)
-- 박현준 : 시장성·이해관계자 Agent (Tavily 검색·확증편향 방지·근거 검증 규칙), 발표
-- 왕채은 : 도메인 평가 Agent (기준별 논문 RAG·근거 연결 검증)
-- 강용현 : 평가 종합·보고서 Agent (품질 점검·Markdown/PDF 보고서)
-
-## 평가 보고서 핵심 포인트
-
-2026-09-22 전체 그래프 실행 보고서(`result/report.md`)의 요약입니다. 수치는 각 논문·자료의 조건에서 보고된 값이며, 서로 다른 자료의 배수 수치로 우열을 정하지 않습니다.
-
-| 구분 | DeepSeek MLA (SW) | CXL-PNM (HW) |
-|---|---|---|
-| 기술 성숙도 | **TRL 4~6 (중간 확신)**. 7B 이하 모델·128K 문맥에서 MHA2MLA 전환으로 KV cache 92% 이상 절감, 성능 저하 약 1% | **TRL 4~6 (중간 확신)**. 최대 1M 토큰 프로토타입 실험실 평가, 처리량 최대 21.9배·에너지 효율 최대 60배 개선 보고 |
-| 시장성 | 직접 매출·점유율 근거는 부족. 오픈소스 추론 엔진 지원과 후속 모델 적용 사례로 인접 시장의 성장 잠재성 확인 | 직접 채택은 초기 단계. CXL 메모리 풀링·컨트롤러 등 인접 시장의 고성장 전망과 반도체 기업의 투자·제품화 확인 |
-| 이해관계자 | KV 캐시 압축·추론 효율화 수단으로 긍정 평가, 성능 저하와 대형 모델 미지원 우려 공존 | SK하이닉스·Marvell·XCENA 등이 개발 중. 소프트웨어 복잡성·도입 비용·생태계 미성숙이 장벽 |
-| 도메인 적용 | 추가 하드웨어 없이 적용 가능하나 미세 조정과 추론 엔진 호환성 필요 | CXL 호환 장치·드라이버·런타임 등 인프라 투자 필요 |
-| 핵심 미확인 사항 | 텐서 병렬 추론 미공개로 7B 초과 모델·생산 환경 검증 부족 | 대규모 데이터센터 통합·장기 확장성 미확인 |
-
-- **공통 결론**: 두 기술 모두 KV-cache 병목 완화 효과는 확인되지만 **TRL 4~6의 실험실·프로토타입 단계**이며, 대형 모델 지원(MLA)과 상용 데이터센터 적용(PNM)이 불확실합니다.
-- **상충점과 적용 조건**: MLA는 **소프트웨어만으로 즉시 적용**할 수 있는 대신 모델 전환·규모 제약이 있고, PNM은 **초장문맥 확장성**이 강점이지만 하드웨어 도입 난이도와 비용이 큽니다. "기존 모델을 전환할 수 있는가, 새 인프라를 도입할 수 있는가"에 따라 적합한 기술이 달라집니다.
-- **시장성 판단**: 두 기술 모두 대상 기술 자체의 시장 근거는 부족해 직접 판단은 유보했고, 인접 시장(오픈소스 생태계, CXL 하드웨어 시장)의 근거만 확인했습니다.
-- **후속 과제**: 실제 도입 사례와 대형 모델 검증 자료, 통합 비용·전력의 정량 비교를 확보한 뒤 재평가가 필요합니다.
-
-## Lessons Learned
-- **제한된 문서를 검색하는 실습에서는 인프라 복잡도를 줄이는 것이 중요했습니다.** 대상 문서가 최대 200페이지로 제한되어 있어, 별도의 PostgreSQL 서버와 pgvector 확장을 구성하고 접속을 관리하는 부담을 줄이고자 FAISS로 변경했습니다. Python 실행 환경에서 인덱스를 생성하고 검색할 수 있도록 구성했으며, langchain의 메타데이터 필터도 FAISS에 적합했습니다.
-- **프롬프트 지시만으로는 규칙이 지켜지지 않았습니다.** 실측에서 LLM은 근거를 통째로 붙이고, 해시 ID를 잘못 옮기고, 입력의 다른 문서 수치를 가져왔습니다. 반드시 지켜야 하는 규칙은 코드 검증으로 옮겼습니다.
-- **가짜 모델 테스트와 실제 실행은 다른 문제를 보여줍니다.** 단위 테스트가 통과한 뒤에도 실측에서 새 실패 유형이 나왔고, 녹화한 실제 응답을 재생하는 테스트로 비용 없이 재현했습니다.
-- **LLM 입력은 줄일수록 근거가 정확해졌습니다.** 필요한 근거만 나눠 전달하자 주장과 근거의 대응이 분명해졌습니다.
-- **공용 스키마는 먼저 합의하고 추가만 하도록 설계해야 합니다.** 확장 필드를 선택 필드와 기본값으로 만들어 다른 모듈 수정 없이 병합했습니다.
-- **통합 점검이 없으면 main이 조용히 깨집니다.** 모듈 구조를 바꾼 뒤 삭제된 파일 import와 lockfile 불일치가 남았습니다. 병합 전 전체 테스트와 실행 점검이 필요합니다.
+- 이중헌: Supervisor Node 설계 및 동적 Routing 구현
+- 왕채은: Layered State Schema 설계 및 상태 관리 구조 정의
+- 박현준: Report Node 및 보고서 품질 평가 로직 구현
+- 강용현: LangSmith Tracing 구성 및 README 문서화
+- 박지원: README 문서화 및 아키텍처·State 설계 정리
+- 문진영: 코드 구조 정리 및 모듈 통합 점검
