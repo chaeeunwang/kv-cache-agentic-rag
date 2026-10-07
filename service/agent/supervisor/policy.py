@@ -163,9 +163,15 @@ def dispatch_update(state: State, choice: Choice, target: str, instructions: lis
     perspective = PERSPECTIVE_OF[target]
     if not state.get(RESULT_OF[perspective]):
         return {"quality_feedback": []}
+    return {**_perspective_rework_update(state, choice, perspective, instructions), **retry}
+
+
+def _perspective_rework_update(state: State, choice: Choice, perspective: str,
+                              instructions: list[str] | None) -> dict:
+    """관점 재호출에 필요한 기존 State 갱신을 구성한다."""
     counts = dict(state.get("rework_counts") or {})
     counts[perspective] = counts.get(perspective, 0) + 1
     items = instructions or default_instructions(state, choice, perspective)
     # 상류 근거가 바뀌므로 하류 산출물을 비운다. 평가 판정은 보고서를 다시 보낼 때 지시로 쓰려고 남긴다.
     return {"quality_feedback": label_instructions(perspective, items), "rework_counts": counts,
-            "synthesis_result": None, "report_markdown": None, **retry}
+            "synthesis_result": None, "report_markdown": None}
