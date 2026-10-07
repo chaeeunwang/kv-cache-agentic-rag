@@ -4,6 +4,8 @@ from typing import Literal, NotRequired, TypedDict
 
 from pydantic import BaseModel, ConfigDict, Field
 
+from service.schema.control import SupervisorControl
+
 
 class Technology(TypedDict):
     id: str
@@ -60,29 +62,7 @@ class AgentResult(TypedDict):
     limitations: list[str]
 
 
-EvalCriterionName = Literal["groundedness", "neutrality", "bias_control", "perspective_coverage"]
-
-
-class EvalCriterionResult(TypedDict):
-    passed: bool
-    method: Literal["rule", "llm_judge"]
-    score: float | None
-    # 라우팅·재작업에 필요한 짧은 사유만 둔다. 위반 문장 전문은 detail_path의 외부 파일에 저장한다.
-    reasons: list[str]
-
-
-class EvalVerdict(TypedDict):
-    passed: bool
-    attempt: int
-    criteria: dict[EvalCriterionName, EvalCriterionResult]
-    # Supervisor가 재작업 지시로 그대로 읽는 수정 방향
-    feedback: list[str]
-    # 재작업 권고 대상(technical·market·stakeholder·domain·report). 실제 분기는 Supervisor가 결정한다.
-    retry_targets: list[str]
-    detail_path: str | None
-
-
-class GraphState(TypedDict):
+class GraphState(SupervisorControl):
     # 실행 중 바뀌지 않는 공통 입력
     request: str
     target_domain: str
@@ -93,16 +73,13 @@ class GraphState(TypedDict):
     market_result: NotRequired[AgentResult]
     stakeholder_result: NotRequired[AgentResult]
     domain_result: NotRequired[AgentResult]
-    synthesis_result: NotRequired[AgentResult]
+    synthesis_result: NotRequired[AgentResult | None]
     # 종합 평가가 남긴 피드백과 전체 재작업 횟수
     quality_feedback: list[str]
     revision_count: int
     # 보고서 생성 노드의 최종 출력
-    report_markdown: NotRequired[str]
+    report_markdown: NotRequired[str | None]
     report_evidence_ids: NotRequired[list[str]]
-    # 보고서 품질 평가 노드의 판정과 평가 실행 횟수(종료 가드)
-    eval_result: NotRequired[EvalVerdict]
-    eval_count: NotRequired[int]
 
 
 # criterion과 next_queries는 LLM 응답 경계에서만 사용하고 공개 AgentResult에는 넣지 않는다.
