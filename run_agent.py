@@ -1,11 +1,17 @@
 """KV cache 다관점 평가 그래프 실행 진입점."""
 
 import argparse
+import importlib
 import json
+import logging
+import uuid
 from pathlib import Path
+
+from langgraph.checkpoint.memory import InMemorySaver
 
 from config import settings
 from service.agent.graph import build_agent_graph
+from service.agent.supervisor import make_judge
 from service.agent.tavily.query_templates import CRITERIA as TAVILY_CRITERIA
 from service.retrieval.paper_index import get_paper_index
 from service.schema.state import GraphState
@@ -23,7 +29,34 @@ Processing-Near-Memory(PNM)를 데이터센터·클라우드 장문맥 LLM 서�
 평가 기준일은 2026-09-21이다. 자료에서 확인되지 않는 가격·공급사·채택 현황은 판단을 유보한다."""
 
 
-def initial_state(domain: str) -> GraphState:
+# 3번 담당이 제공하는 보고서 품질 평가 노드의 기본 위치. 달라지면 --evaluator로 바꾼다.
+DEFAULT_EVALUATOR = "service.agent.evaluation:report_evaluator"
+# Supervisor의 스텝 상한(policy.MAX_STEPS) 바깥에서 그래프 전체를 멈추는 최종 안전장치다.
+RECURSION_LIMIT = 60
+
+
+def load_evaluator(path: str):
+    """'모듈:함수' 형식의 경로에서 보고서 품질 평가 노드를 불러온다."""
+    module_name, _, attribute = path.partition(":")
+    if not module_name or not attribute:
+        raise ValueError(f"평가 노드 경로는 '모듈:함수' 형식이어야 합니다: {path}")
+    return getattr(importlib.import_module(module_name), attribute)
+
+
+def outcome_lines(result: dict) -> list[str]:
+    """최종 State에서 종료 방식을 읽어 출력할 문장을 만든다."""
+    lines = ["보고서: result/report.md, result/report.pdf" if result.get("report_markdown") else "보고서 미생성"]
+    if result.get("warning"):
+        lines.append(f"경고 종료: {result['warning']}")
+    elif (result.get("eval_result") or {}).get("passed"):
+        lines.append("품질 평가 통과")
+    rework = sum((result.get("rework_counts") or {}).values())
+    lines.append(f"Supervisor 결정 {result.get('step_count', 0)}회, 재작업 {rework}회, "
+                 f"FAIL 재시도 {result.get('eval_retry_count', 0)}회")
+    return lines
+
+
+def initial_state(domain: str, trace_id: str = "") -> GraphState:
     """사용자 입력과 고정 평가 기준으로 최초 GraphState를 만든다."""
     return {
         "request": DEFAULT_REQUEST,
@@ -59,6 +92,11 @@ def initial_state(domain: str) -> GraphState:
         ],
         "quality_feedback": [],
         "revision_count": 0,
+        # Supervisor 제어 필드
+        "step_count": 0,
+        "rework_counts": {},
+        "eval_retry_count": 0,
+        "trace_id": trace_id,
     }
 
 
@@ -67,6 +105,7 @@ def main() -> None:
     parser.add_argument("--domain", default=DEFAULT_DOMAIN, help="평가 대상 도메인")
     parser.add_argument("--max-technical-retries", type=int, choices=range(6), default=2)
     parser.add_argument("--state-output", type=Path, default=Path("result/state.json"))
+    parser.add_argument("--evaluator", default=DEFAULT_EVALUATOR, help="보고서 품질 평가 노드의 '모듈:함수' 경로")
     args = parser.parse_args()
 
     # 외부 호출 전에 필수 키를 확인해 그래프 중간에서 실패하는 것을 막는다.
@@ -81,26 +120,33 @@ def main() -> None:
     if missing:
         parser.error("필수 환경변수가 없습니다: " + ", ".join(missing))
 
+    # 평가 노드가 없으면 자동 통과로 대체하지 않고 실행 전에 멈춘다.
+    try:
+        evaluator = load_evaluator(args.evaluator)
+    except (ImportError, AttributeError, ValueError) as exc:
+        parser.error(f"보고서 품질 평가 노드를 불러올 수 없습니다({args.evaluator}): {exc}")
+
+    # Supervisor의 결정 이력은 State가 아니라 trace_id가 붙은 로그로 남긴다.
+    logging.basicConfig(level=logging.WARNING, format="%(message)s")
+    logging.getLogger("supervisor").setLevel(logging.INFO)
+
     print("FAISS 논문 인덱스를 불러옵니다.", flush=True)
     index = get_paper_index()
-    graph = build_agent_graph(index, max_technical_retries=args.max_technical_retries)
+    graph = build_agent_graph(index, max_technical_retries=args.max_technical_retries, evaluator=evaluator,
+                              judge=make_judge(), checkpointer=InMemorySaver())
 
-    print("평가 그래프를 실행합니다.", flush=True)
-    # recursion_limit은 기술 재검색과 전체 품질 재작업이 잘못 반복될 때의 최종 안전장치다.
-    result = graph.invoke(initial_state(args.domain), config={"recursion_limit": 30})
+    trace_id = uuid.uuid4().hex
+    print(f"평가 그래프를 실행합니다. trace_id={trace_id}", flush=True)
+    config = {"recursion_limit": RECURSION_LIMIT, "configurable": {"thread_id": trace_id},
+              "metadata": {"trace_id": trace_id, "pattern": "supervisor"}}
+    result = graph.invoke(initial_state(args.domain, trace_id), config=config)
 
     # 최종 State를 함께 저장해 각 에이전트의 근거와 한계를 추적할 수 있게 한다.
     args.state_output.parent.mkdir(parents=True, exist_ok=True)
     args.state_output.write_text(json.dumps(result, ensure_ascii=False, indent=2), encoding="utf-8")
     print(f"State: {args.state_output}", flush=True)
-    if result.get("report_markdown"):
-        print("보고서: result/report.md, result/report.pdf", flush=True)
-    else:
-        print(
-            "보고서 미생성: 품질 피드백이 재작업 한도까지 해소되지 않아 report_agent 전에 종료됐습니다. ",
-            f"revision_count={result.get('revision_count', 0)}",
-            flush=True,
-        )
+    for line in outcome_lines(result):
+        print(line, flush=True)
 
 
 if __name__ == "__main__":
