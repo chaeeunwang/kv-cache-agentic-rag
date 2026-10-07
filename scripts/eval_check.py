@@ -29,24 +29,25 @@ def main() -> None:
     if not state.get("report_markdown"):
         parser.error(f"{args.state}에 report_markdown이 없습니다. 보고서가 생성된 State로 실행하세요.")
     # 그래프 재작업 횟수와 무관하게 단독 점검은 항상 1회차로 기록한다.
-    state["eval_count"] = 0
+    state["eval_retry_count"] = 0
 
     print(f"Judge 모델: {settings.judge_model} / 인용 비율 기준 {settings.groundedness_min_ratio:.0%} / "
           f"Judge 통과 {settings.judge_pass_score}점", flush=True)
-    verdict = make_report_evaluator(output_dir=args.output_dir)(state)["eval_result"]
+    eval_result = make_report_evaluator(output_dir=args.output_dir)(state)["eval_result"]
+    detail_path = args.output_dir / "eval_1.json"
+    detail = json.loads(detail_path.read_text(encoding="utf-8"))
 
-    print(f"\n종합: {'PASS' if verdict['passed'] else 'FAIL'}")
-    for name, result in verdict["criteria"].items():
+    print(f"\n종합: {'PASS' if eval_result['passed'] else 'FAIL'}")
+    for name, result in detail["criteria"].items():
         score = "-" if result["score"] is None else f"{result['score']:g}"
         print(f"- {name:<21} {result['method']:<9} {'PASS' if result['passed'] else 'FAIL'}  score={score}")
         for reason in result["reasons"]:
             print(f"    · {reason}")
-    if verdict["retry_targets"]:
-        print("\n재작업 권고 대상:", ", ".join(verdict["retry_targets"]))
-    for item in verdict["feedback"]:
+    if eval_result["perspectives"]:
+        print("\n근거 보강 권고 관점:", ", ".join(eval_result["perspectives"]))
+    for item in eval_result["issues"]:
         print(f"  - {item}")
-    print(f"\n상세: {verdict['detail_path']}")
-
+    print(f"\n상세: {detail_path}")
 
 if __name__ == "__main__":
     main()

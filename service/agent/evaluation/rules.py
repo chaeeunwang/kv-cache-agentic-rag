@@ -7,7 +7,18 @@
 import re
 from dataclasses import dataclass, field
 
-from service.schema.state import EvalCriterionResult, GraphState
+from typing import Literal, TypedDict
+
+from service.schema.state import GraphState
+
+
+class CriterionResult(TypedDict):
+    """항목별 상세 판정. State에는 통과 여부(bool)만 넣고, 점수·사유는 상세 파일에 저장한다."""
+
+    passed: bool
+    method: Literal["rule", "llm_judge"]
+    score: float | None
+    reasons: list[str]
 
 # State의 관점 결과 필드 → 재작업 권고 대상 이름
 PERSPECTIVES: dict[str, str] = {
@@ -47,7 +58,7 @@ CLAIM_SECTION = re.compile(r"^[34](\.|\s|$)")
 
 @dataclass
 class RuleOutcome:
-    result: EvalCriterionResult
+    result: CriterionResult
     feedback: list[str] = field(default_factory=list)
     retry_targets: list[str] = field(default_factory=list)
     # 외부 상세 파일에만 저장하는 진단 정보

@@ -3,9 +3,9 @@
 import json
 
 import pytest
-from langgraph.graph import END, START, StateGraph
-
-from service.agent.evaluation import attach_report_evaluation, make_eval_router, make_finalize_eval, make_report_evaluator
+from service.agent.evaluation import make_report_evaluator
+from service.agent.supervisor.adapters import with_request_instructions
+from service.agent.supervisor.graph import build_supervisor_graph
 from service.agent.evaluation.judge import JudgeCriterion, JudgeOutput, judge_context
 from service.agent.evaluation.rules import (
     check_groundedness,
@@ -13,7 +13,6 @@ from service.agent.evaluation.rules import (
     claim_units,
     extract_citations,
 )
-from service.schema.state import GraphState
 from tests.fixtures import sample_technologies
 
 
@@ -65,7 +64,7 @@ CXL 호환 장치와 런타임 등 인프라 투자가 전제된다 [domain_hw_0
 """
 
 
-def make_state(report: str = GOOD_REPORT, **overrides) -> GraphState:
+def make_state(report: str = GOOD_REPORT, **overrides) -> dict:
     state = {
         "request": "비교 평가", "target_domain": "데이터센터 LLM 서빙", "evaluation_criteria": {},
         "technologies": sample_technologies(),
@@ -195,97 +194,113 @@ def test_judge_context_lists_only_cited_sources():
     assert set(context["cited_evidence_sources"]) == set(extract_citations(GOOD_REPORT.split("# REFERENCE")[0]))
 
 
-# ── 평가 노드 ───────────────────────────────────────────
+# ── 평가 노드 (Supervisor EvalResult 형식) ───────────────────
+
+EVAL_RESULT_KEYS = {"passed", "groundedness", "neutrality", "bias_control", "coverage",
+                    "issues", "retry_instruction", "perspectives"}
+
 
 def test_evaluator_passes_and_writes_detail_file(tmp_path):
     node = make_report_evaluator(JudgeFixture((5, 4)), output_dir=tmp_path)
     update = node(make_state())
-    verdict = update["eval_result"]
-    assert update["eval_count"] == 1 and verdict["passed"]
-    assert list(verdict["criteria"]) == ["groundedness", "neutrality", "bias_control", "perspective_coverage"]
-    assert verdict["criteria"]["neutrality"]["method"] == "llm_judge"
-    assert verdict["criteria"]["groundedness"]["method"] == "rule"
+    assert set(update) == {"eval_result"}
+    eval_result = update["eval_result"]
+    assert set(eval_result) == EVAL_RESULT_KEYS
+    assert eval_result["passed"] and all(eval_result[k] for k in ("groundedness", "neutrality", "bias_control", "coverage"))
+    assert eval_result["issues"] == [] and eval_result["retry_instruction"] == "" and eval_result["perspectives"] == []
     detail = json.loads((tmp_path / "eval_1.json").read_text(encoding="utf-8"))
-    assert detail["verdict"]["passed"] and "details" in detail
+    assert detail["criteria"]["neutrality"] == {"passed": True, "method": "llm_judge", "score": 5.0,
+                                                "reasons": ["Judge 5/5: 채점 사유"]}
+    assert detail["criteria"]["groundedness"]["method"] == "rule"
 
 
-def test_evaluator_fails_on_judge_score_and_collects_feedback(tmp_path):
-    node = make_report_evaluator(JudgeFixture((2, 5)), output_dir=tmp_path)
-    verdict = node(make_state())["eval_result"]
-    assert not verdict["passed"]
-    assert not verdict["criteria"]["neutrality"]["passed"] and verdict["criteria"]["bias_control"]["passed"]
-    assert verdict["retry_targets"] == ["report"]
-    assert "우열 표현을 조건부 비교로 바꾸세요." in verdict["feedback"]
-    # 위반 문장은 State가 아니라 상세 파일에만 남는다.
-    assert "MLA가 더 우수하다." not in json.dumps(verdict, ensure_ascii=False)
+def test_evaluator_attempt_follows_supervisor_retry_count(tmp_path):
+    make_report_evaluator(JudgeFixture(), output_dir=tmp_path)(make_state(eval_retry_count=1))
+    assert (tmp_path / "eval_2.json").is_file()
+
+
+def test_evaluator_fails_on_judge_score_and_keeps_violations_out_of_state(tmp_path):
+    eval_result = make_report_evaluator(JudgeFixture((2, 5)), output_dir=tmp_path)(make_state())["eval_result"]
+    assert not eval_result["passed"] and not eval_result["neutrality"] and eval_result["bias_control"]
+    # 표현 문제는 관점 재작업이 아니라 보고서 재작성 대상이다.
+    assert eval_result["perspectives"] == []
+    assert eval_result["issues"] == ["우열 표현을 조건부 비교로 바꾸세요."]
+    assert eval_result["retry_instruction"].startswith("중립성 미달: Judge 2/5")
+    assert "MLA가 더 우수하다." not in json.dumps(eval_result, ensure_ascii=False)
     detail = json.loads((tmp_path / "eval_1.json").read_text(encoding="utf-8"))
     assert detail["details"]["neutrality"]["violations"] == ["MLA가 더 우수하다."]
 
 
+def test_evaluator_names_perspectives_for_evidence_failures(tmp_path):
+    state = make_state(market_result=None)
+    eval_result = make_report_evaluator(JudgeFixture((5, 2)), output_dir=tmp_path)(state)["eval_result"]
+    assert not eval_result["coverage"] and not eval_result["bias_control"]
+    # 커버리지 누락(market)과 Judge가 지목한 편향 관점(market)을 중복 없이 넘긴다.
+    assert eval_result["perspectives"] == ["market"]
+
+
 def test_evaluator_records_judge_failure_as_unmet(tmp_path):
-    verdict = make_report_evaluator(JudgeFixture(fail=True), output_dir=tmp_path)(make_state())["eval_result"]
-    assert not verdict["passed"]
-    assert verdict["criteria"]["bias_control"]["score"] is None
-    assert any("Judge 호출 실패" in reason for reason in verdict["criteria"]["neutrality"]["reasons"])
+    eval_result = make_report_evaluator(JudgeFixture(fail=True), output_dir=tmp_path)(make_state())["eval_result"]
+    assert not eval_result["passed"] and not eval_result["neutrality"]
+    assert "Judge 호출 실패(RuntimeError)" in eval_result["retry_instruction"]
 
 
-# ── 라우팅·종료 ─────────────────────────────────────────
+# ── 실제 Supervisor 그래프와의 연결 ──────────────────────
 
-def test_router_branches():
-    route = make_eval_router("supervisor", max_attempts=2)
-    assert route({"eval_result": {"passed": True}, "eval_count": 1}) == END
-    assert route({"eval_result": {"passed": False}, "eval_count": 1}) == "supervisor"
-    assert route({"eval_result": {"passed": False}, "eval_count": 2}) == "finalize_eval"
+class FakeAgents:
+    """네 관점·종합·보고서 대역. 보고서 버전을 바꿔 가며 반환한다."""
 
+    def __init__(self, reports):
+        self.reports = list(reports)
+        self.calls = []
 
-def test_finalize_inserts_limitations_before_reference(tmp_path):
-    state = make_state()
-    state["eval_result"] = make_report_evaluator(JudgeFixture((2, 2)), output_dir=tmp_path)(state)["eval_result"]
-    saved = []
-    update = make_finalize_eval(writer=lambda md, ids: saved.append(md))(state)
-    report = update["report_markdown"]
-    assert saved == [report]
-    assert report.index("# 품질 평가 결과 및 한계") < report.index("# REFERENCE")
-    assert "| 중립성 | 2안 LLM Judge | 미달 | 2 |" in report
-    assert "## Fail 분석" in report
+    def worker(self, field, prefix):
+        def run(state):
+            self.calls.append(field)
+            return {field: result(prefix)}
+        return run
 
+    def nodes(self):
+        def synthesis(state):
+            self.calls.append("synthesis")
+            return {"synthesis_result": result("tech"), "quality_feedback": []}
 
-def build_loop_graph(judge, tmp_path):
-    """Supervisor → report → 평가 루프만 가진 최소 그래프. 실제 연결 함수(attach_report_evaluation)를 그대로 쓴다."""
-    calls = {"supervisor": 0, "report": 0}
+        def report(state):
+            self.calls.append("report")
+            text = self.reports.pop(0) if len(self.reports) > 1 else self.reports[0]
+            return {"report_markdown": text, "report_evidence_ids": []}
 
-    def supervisor(state):
-        calls["supervisor"] += 1
-        return {}
-
-    def report(state):
-        calls["report"] += 1
-        return {"report_markdown": GOOD_REPORT}
-
-    workflow = StateGraph(GraphState)
-    workflow.add_node("supervisor", supervisor)
-    workflow.add_node("report_agent", report)
-    workflow.add_edge(START, "supervisor")
-    workflow.add_edge("supervisor", "report_agent")
-    attach_report_evaluation(
-        workflow, max_attempts=2,
-        evaluator=make_report_evaluator(judge, output_dir=tmp_path),
-        finalizer=make_finalize_eval(writer=lambda md, ids: None),
-    )
-    return workflow.compile(), calls
+        return {"technical_agent": self.worker("technical_result", "tech"),
+                "market_node": self.worker("market_result", "market"),
+                "stakeholder_node": self.worker("stakeholder_result", "stake"),
+                "domain_agent": self.worker("domain_result", "domain"),
+                "synthesis_agent": synthesis, "report_agent": with_request_instructions(report)}
 
 
-def test_graph_retries_once_via_supervisor_then_passes(tmp_path):
-    graph, calls = build_loop_graph(JudgeFixture((2, 5), (5, 5)), tmp_path)
-    final = graph.invoke(make_state(report=""))
-    assert final["eval_count"] == 2 and final["eval_result"]["passed"]
-    assert calls == {"supervisor": 2, "report": 2}
-    assert "품질 평가 결과 및 한계" not in final["report_markdown"]
+def run_graph(agents, judge, tmp_path):
+    graph = build_supervisor_graph(agents.nodes(), evaluator=make_report_evaluator(judge, output_dir=tmp_path))
+    initial = {**{k: v for k, v in make_state().items() if not k.endswith("_result") and k != "report_markdown"},
+               "eval_retry_count": 0}
+    return graph.invoke(initial, config={"recursion_limit": 60})
 
 
-def test_graph_finalizes_with_limitations_after_retry_limit(tmp_path):
-    graph, calls = build_loop_graph(JudgeFixture((1, 1)), tmp_path)
-    final = graph.invoke(make_state(report=""), config={"recursion_limit": 20})
-    assert final["eval_count"] == 2 and not final["eval_result"]["passed"]
-    assert calls == {"supervisor": 2, "report": 2}  # 최초 1회 + 재시도 1회 후 종료
-    assert "# 품질 평가 결과 및 한계" in final["report_markdown"]
+def test_supervisor_graph_retries_report_once_then_finishes(tmp_path):
+    uncited = GOOD_REPORT.replace("[market_sw_01_e1]", "").replace("[market_hw_01_e1]", "") \
+        .replace(" [stake_sw_01_e1]", "").replace(" [stake_hw_01_e1]", "") \
+        .replace(" [domain_sw_01_e1].\n장", ".\n장").replace(" [domain_hw_01_e1].\n\n", ".\n\n")
+    agents = FakeAgents([uncited, GOOD_REPORT])
+    out = run_graph(agents, JudgeFixture(), tmp_path)
+    assert out["next"] == "FINISH" and out["eval_result"]["passed"]
+    assert out["eval_retry_count"] == 1 and agents.calls.count("report") == 2
+    # 표현 문제(인용 누락)는 관점 재작업 없이 보고서만 다시 쓴다.
+    assert agents.calls.count("technical_result") == 1
+    first = json.loads((tmp_path / "eval_1.json").read_text(encoding="utf-8"))
+    assert first["eval_result"]["groundedness"] is False
+
+
+def test_supervisor_graph_ends_with_warning_after_retry_budget(tmp_path):
+    agents = FakeAgents([GOOD_REPORT])
+    out = run_graph(agents, JudgeFixture((1, 5)), tmp_path)
+    assert out["next"] == "END_WARNING" and out["eval_retry_count"] == 1
+    assert agents.calls.count("report") == 2
+    assert "neutrality" in out["warning"]

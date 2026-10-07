@@ -35,8 +35,7 @@ class Settings(BaseSettings):
     embedding_batch_size: int = Field(default=8, gt=0)
     retrieval_top_k: int = Field(default=5, gt=0)
 
-    # 보고서 품질 평가: 최초 평가 1회 + 재시도 1회
-    eval_max_attempts: int = Field(default=2, ge=1)
+    # 보고서 품질 평가 기준 (재시도 횟수 상한은 Supervisor policy.MAX_EVAL_RETRY가 관리)
     # 3~4장 주장 단위 중 근거 ID가 붙은 비율의 하한
     groundedness_min_ratio: float = Field(default=0.7, ge=0, le=1)
     # LLM Judge 1~5점 중 통과 하한
