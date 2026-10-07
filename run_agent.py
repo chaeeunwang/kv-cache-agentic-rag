@@ -29,7 +29,7 @@ Processing-Near-Memory(PNM)를 데이터센터·클라우드 장문맥 LLM 서�
 평가 기준일은 2026-09-21이다. 자료에서 확인되지 않는 가격·공급사·채택 현황은 판단을 유보한다."""
 
 
-# 3번 담당이 제공하는 보고서 품질 평가 노드의 기본 위치. 달라지면 --evaluator로 바꾼다.
+# 기본 평가 노드의 import 경로. 필요하면 --evaluator로 바꾼다.
 DEFAULT_EVALUATOR = "service.agent.evaluation:report_evaluator"
 # Supervisor의 스텝 상한(policy.MAX_STEPS) 바깥에서 그래프 전체를 멈추는 최종 안전장치다.
 RECURSION_LIMIT = 60

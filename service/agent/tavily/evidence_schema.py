@@ -1,9 +1,4 @@
-"""웹 근거의 내부 수집 기록과 인용 형식.
-
-공용 Evidence 스키마는 바꾸지 않는다. 질의 방향·점수처럼 이 에이전트만 쓰는 정보는
-RetrievalRecord로 따로 보관한다. 같은 Evidence ID에 에이전트마다 다른 값을 넣으면
-pipeline.collect_sources가 충돌로 처리하기 때문이다.
-"""
+"""웹 검색의 부가 정보를 공용 Evidence와 분리해 기록한다."""
 
 import hashlib
 from datetime import date, datetime
@@ -30,7 +25,7 @@ class RetrievalRecord(TypedDict):
 
 
 def web_evidence_id(url: str, excerpt: str) -> str:
-    # pipeline.search_web과 같은 규칙이다. 같은 URL의 서로 다른 발췌도 고유 ID로 유지한다.
+    # URL이 같아도 발췌 내용이 다르면 다른 근거 ID를 부여한다.
     return "web_" + hashlib.sha256((url + "\n" + excerpt).encode()).hexdigest()[:16]
 
 

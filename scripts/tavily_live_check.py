@@ -25,7 +25,7 @@ from service.agent.tavily.client import tavily_search  # noqa: E402
 from service.agent.tavily.evaluation import get_analyst  # noqa: E402
 
 RECORDED = ROOT / "tests" / "tavily_fixtures" / "recorded"
-# pipeline.select_technologies와 같은 사람 확정 기술 목록
+# 실측에 사용할, 사람이 확정한 기술 목록
 TECHNOLOGIES = [
     {"id": "sw_01", "name": "DeepSeek-V2 MLA", "approach": "SW",
      "selection_reason": "KV 표현을 저차원 잠재 공간으로 바꾸는 구조적 접근으로, 공개 모델·논문의 성과와 모델 변경·서빙 호환성 부담을 함께 평가할 수 있다."},

@@ -1,7 +1,7 @@
 """시장성·이해관계자 평가의 Tavily 질의 템플릿.
 
 관점별 차이는 이 파일의 데이터로만 표현한다. 검색 로직은 두 에이전트가 공유한다.
-평가 기준은 설계서 3.4절을 따른다. 레포 pipeline.CRITERIA의 목업 기준과는 다르다.
+평가 기준은 설계서 3.4절을 따른다.
 """
 
 from typing import Literal, NamedTuple
