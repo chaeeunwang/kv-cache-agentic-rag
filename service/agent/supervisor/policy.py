@@ -4,9 +4,12 @@ from collections.abc import Mapping
 from dataclasses import dataclass
 from typing import Any, Literal
 
-# 한도는 프롬프트가 아니라 코드 상수로 강제한다.
+# 일반 관점 재작업과 보고서 FAIL 이후 재작업은 별도 예산이다.
+# MAX_REWORK_PER_AGENT는 일반 error/partial 재작업에만 적용한다.
+# FAIL 경로는 MAX_EVAL_RETRY를 사용하므로 같은 관점의 누적 재작업은 2회가 될 수 있다.
 MAX_REWORK_PER_AGENT = 1
 MAX_EVAL_RETRY = 1
+# 조사/재작업을 중단하는 결정 횟수 기준이며, 마무리 노드는 이후에도 실행할 수 있다.
 MAX_STEPS = 20
 
 FINISH = "FINISH"
@@ -163,9 +166,15 @@ def dispatch_update(state: State, choice: Choice, target: str, instructions: lis
     perspective = PERSPECTIVE_OF[target]
     if not state.get(RESULT_OF[perspective]):
         return {"quality_feedback": []}
+    return {**_perspective_rework_update(state, choice, perspective, instructions), **retry}
+
+
+def _perspective_rework_update(state: State, choice: Choice, perspective: str,
+                              instructions: list[str] | None) -> dict:
+    """관점 재호출에 필요한 기존 State 갱신을 구성한다."""
     counts = dict(state.get("rework_counts") or {})
     counts[perspective] = counts.get(perspective, 0) + 1
     items = instructions or default_instructions(state, choice, perspective)
     # 상류 근거가 바뀌므로 하류 산출물을 비운다. 평가 판정은 보고서를 다시 보낼 때 지시로 쓰려고 남긴다.
     return {"quality_feedback": label_instructions(perspective, items), "rework_counts": counts,
-            "synthesis_result": None, "report_markdown": None, **retry}
+            "synthesis_result": None, "report_markdown": None}

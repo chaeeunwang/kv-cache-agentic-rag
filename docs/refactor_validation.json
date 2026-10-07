@@ -1,0 +1,219 @@
+{
+  "purpose": "Behavior preservation baseline; synthetic workers and Judge, no live model quality claim.",
+  "baseline_commit": "e51aa41",
+  "preserve": [
+    "Supervisor routes and reasons",
+    "State keys and values",
+    "retry budgets",
+    "prompt text except report length instructions",
+    "search queries",
+    "quality thresholds",
+    "public imports and CLI",
+    "output paths"
+  ],
+  "scenarios": {
+    "normal": {
+      "route": [
+        "technical",
+        "market",
+        "stakeholder",
+        "domain",
+        "synthesis",
+        "report",
+        "evaluator"
+      ],
+      "termination": "FINISH",
+      "supervisor_decisions": 7,
+      "rework_counts": {},
+      "eval_retry_count": 0
+    },
+    "skip_collected": {
+      "route": [
+        "market",
+        "stakeholder",
+        "synthesis",
+        "report",
+        "evaluator"
+      ],
+      "termination": "FINISH",
+      "supervisor_decisions": 5,
+      "rework_counts": {},
+      "eval_retry_count": 0
+    },
+    "partial_domain_first": {
+      "route": [
+        "technical",
+        "market",
+        "stakeholder",
+        "domain",
+        "domain",
+        "market",
+        "synthesis",
+        "report",
+        "evaluator"
+      ],
+      "termination": "FINISH",
+      "supervisor_decisions": 9,
+      "rework_counts": {
+        "domain": 1,
+        "market": 1
+      },
+      "eval_retry_count": 0
+    },
+    "partial_proceed": {
+      "route": [
+        "technical",
+        "market",
+        "stakeholder",
+        "domain",
+        "synthesis",
+        "report",
+        "evaluator"
+      ],
+      "termination": "FINISH",
+      "supervisor_decisions": 7,
+      "rework_counts": {},
+      "eval_retry_count": 0
+    },
+    "neutrality_rewrite": {
+      "route": [
+        "technical",
+        "market",
+        "stakeholder",
+        "domain",
+        "synthesis",
+        "report",
+        "evaluator",
+        "report",
+        "evaluator"
+      ],
+      "termination": "FINISH",
+      "supervisor_decisions": 8,
+      "rework_counts": {},
+      "eval_retry_count": 1
+    },
+    "domain_rework": {
+      "route": [
+        "technical",
+        "market",
+        "stakeholder",
+        "domain",
+        "synthesis",
+        "report",
+        "evaluator",
+        "domain",
+        "synthesis",
+        "report",
+        "evaluator"
+      ],
+      "termination": "FINISH",
+      "supervisor_decisions": 10,
+      "rework_counts": {
+        "domain": 1
+      },
+      "eval_retry_count": 1
+    },
+    "persistent_failure": {
+      "route": [
+        "technical",
+        "market",
+        "stakeholder",
+        "domain",
+        "domain",
+        "synthesis",
+        "report",
+        "evaluator",
+        "domain",
+        "synthesis",
+        "report",
+        "evaluator"
+      ],
+      "termination": "END_WARNING",
+      "supervisor_decisions": 11,
+      "rework_counts": {
+        "domain": 2
+      },
+      "eval_retry_count": 1
+    },
+    "step_guard": {
+      "route": [
+        "synthesis",
+        "report",
+        "evaluator"
+      ],
+      "termination": "END_WARNING",
+      "supervisor_decisions": 23,
+      "rework_counts": {},
+      "eval_retry_count": 0
+    }
+  },
+  "baseline_sha256": "c1b8c9542cf7efa846fb6b6f657b71801fed66dd79fa281ef85ac019a04f1efd",
+  "allowed_behavior_change": "Report length prompting, PDF page count verification and at most two shortening retries; final oversized PDF must not be published.",
+  "verification": {
+    "baseline_scenarios": 8,
+    "baseline_checks": 5,
+    "after_refactor": "8 graph scenarios and 5 additional checks exactly match baseline.",
+    "pdf_limit": {
+      "boundary_pages": [
+        10,
+        11
+      ],
+      "overlength_preserves_existing_files": true,
+      "normal": {
+        "model_calls": 1,
+        "pages": 1,
+        "published": true
+      },
+      "report_context_unchanged": true,
+      "shortened": {
+        "model_calls": 2,
+        "pages": 1,
+        "published": true
+      },
+      "second_shortening": {
+        "model_calls": 3,
+        "pages": 1,
+        "published": true
+      },
+      "exhausted": {
+        "model_calls": 3,
+        "published": false
+      }
+    },
+    "after_refactor_sha256": "c1b8c9542cf7efa846fb6b6f657b71801fed66dd79fa281ef85ac019a04f1efd",
+    "report_input": "Model context, token settings, citation IDs and output schema preserved; report length instructions are the sole prompt addition.",
+    "integration_smoke": {
+      "tests_directory_present": false,
+      "next": "FINISH",
+      "eval_result": {
+        "passed": true,
+        "groundedness": true,
+        "neutrality": true,
+        "bias_control": true,
+        "coverage": true,
+        "issues": [],
+        "retry_instruction": "",
+        "perspectives": []
+      },
+      "eval_retry_count": 1,
+      "pdf_pages": 1,
+      "calls": {
+        "technical": 1,
+        "search": 24,
+        "web": 12,
+        "domain": 1,
+        "synthesis": 1,
+        "report": 2,
+        "judge": 2
+      },
+      "feedback_reaches_second_report": true
+    },
+    "integration_matches_before": true,
+    "python_syntax_files": 69,
+    "limitations": [
+      "Model and search responses were substituted; live API output quality was not evaluated.",
+      "Deleted tests and .env.example were preserved as local deletions and excluded from commits."
+    ]
+  },
+  "verified_code_commit": "41e04ed5bd9ac14c498b8051d34889f4457ed6da"
+}

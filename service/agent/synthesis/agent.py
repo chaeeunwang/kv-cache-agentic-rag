@@ -1,4 +1,4 @@
-"""관점별 평가를 종합하고 전체 재작업 여부를 판단하는 에이전트."""
+"""관점별 평가를 종합하고 상태와 피드백을 반환하는 에이전트."""
 
 import json
 from typing import Literal
@@ -64,6 +64,6 @@ def synthesis_agent(state: GraphState) -> dict:
     return {
         "synthesis_result": synthesis_result,
         "quality_feedback": quality_feedback,
-        # 종합 평가 완료 횟수로 전체 그래프의 재작업 한도를 제어한다.
+        # 종합 실행 횟수만 기록한다. 재작업과 종료 결정은 Supervisor가 담당한다.
         "revision_count": state.get("revision_count", 0) + 1,
     }

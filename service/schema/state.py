@@ -74,7 +74,8 @@ class GraphState(SupervisorControl):
     stakeholder_result: NotRequired[AgentResult]
     domain_result: NotRequired[AgentResult]
     synthesis_result: NotRequired[AgentResult | None]
-    # 종합 평가가 남긴 피드백과 전체 재작업 횟수
+    # quality_feedback은 다음 작업에 전달할 지시이며 Supervisor 분기에서 교체된다.
+    # revision_count는 종합 실행 횟수이고 Supervisor 재작업 예산으로 사용하지 않는다.
     quality_feedback: list[str]
     revision_count: int
     # 보고서 생성 노드의 최종 출력
