@@ -1,3 +1,4 @@
+import os
 from pathlib import Path
 from typing import Literal
 
@@ -20,6 +21,12 @@ class Settings(BaseSettings):
     # 생성 모델과 분리한 보고서 평가용 Judge 모델 (자기 출력 선호 편향 완화)
     judge_model: str = "gpt-4.1"
     openai_base_url: str | None = None
+    # .env 값을 LangSmith SDK가 읽는 프로세스 환경변수에 연결한다.
+    langsmith_tracing: bool | None = None
+    langsmith_api_key: str | None = Field(default=None, repr=False)
+    langsmith_project: str | None = None
+    langsmith_endpoint: str | None = None
+    langsmith_workspace_id: str | None = None
     embedding_device: str | None = None
     pdf_font: str | None = None
 
@@ -50,4 +57,21 @@ class Settings(BaseSettings):
         return value if value.is_absolute() else ROOT / value
 
 
+    def configure_langsmith(self) -> None:
+        """설정된 추적 옵션을 SDK에 전달한다. 미설정 옵션은 기존 환경을 유지한다."""
+        for field in (
+            "langsmith_tracing",
+            "langsmith_api_key",
+            "langsmith_project",
+            "langsmith_endpoint",
+            "langsmith_workspace_id",
+        ):
+            value = getattr(self, field)
+            if value is not None:
+                os.environ[field.upper()] = str(value).lower() if isinstance(value, bool) else value
+        if self.langsmith_tracing is not None:
+            os.environ["LANGCHAIN_TRACING_V2"] = str(self.langsmith_tracing).lower()
+
+
 settings = Settings()
+settings.configure_langsmith()
