@@ -60,7 +60,5 @@ results = index.search("KV cache 메모리를 줄이는 원리", side="sw", k=5)
 ## 검증
 
 ```sh
-uv run --locked python -m unittest tests.test_embedding -v
 uv run --locked check_domain.py
-uv run --locked check_technical.py
 ```

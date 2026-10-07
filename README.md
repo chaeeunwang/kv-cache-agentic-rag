@@ -235,7 +235,7 @@ uv run run_agent.py --evaluator service.agent.evaluation:report_evaluator
 
 실행 후 `result/report.md`, `result/report.pdf`, `result/state.json`, `result/eval_<회차>.json`을 확인합니다. CLI는 품질 통과 여부 또는 경고 종료 사유와 함께 Supervisor 결정/재작업/FAIL 재시도 횟수를 출력합니다. `state.json`은 그래프 호출이 반환된 뒤 저장되므로 실행 도중 예외로 중단되면 해당 실행의 최종 State가 저장되지 않을 수 있습니다.
 
-현재 전체 실행 진입점은 `run_agent.py`입니다. `tests/`는 실행 의존성이 아니며 삭제된 상태에서도 기본 그래프를 조립할 수 있습니다. 루트의 이전 `pipeline.py`, `check_graph.py`, `check_technical.py`에는 현재 존재하지 않는 모듈 import가 남아 있어 실행 안내에서 제외합니다. 원본 PDF 전처리를 다시 수행하는 경우에는 현재 잠금 의존성에 없는 `pymupdf`와 `pymupdf4llm` 요구 사항을 별도로 확인해야 합니다.
+현재 전체 실행 진입점은 `run_agent.py`입니다. `tests/`는 실행 의존성이 아니며 삭제된 상태에서도 기본 그래프를 조립할 수 있습니다. API 호출 없이 도메인 노드의 State 보존과 검색 흐름을 확인하려면 `uv run check_domain.py`를 실행합니다. 원본 PDF 전처리를 다시 수행하는 경우에는 현재 잠금 의존성에 없는 `pymupdf`와 `pymupdf4llm` 요구 사항을 별도로 확인해야 합니다.
 
 ## Contributors
 
