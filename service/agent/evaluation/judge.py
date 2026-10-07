@@ -29,21 +29,10 @@ class JudgeOutput(BaseModel):
     bias_control: JudgeCriterion
 
 
-def build_judge_signals(state: GraphState, report: str) -> dict:
-    """[확장 지점] Judge 입력에 덧붙일 룰 기반 보조 신호.
-
-    팀 합의에 따라 중립성·편향 통제는 LLM Judge만으로 판정하므로 현재는 빈 dict를 반환한다.
-    확장 시 출처 도메인 분포(단일 출처 비율), 관점별 finding stance 분포(positive/negative),
-    기술별 근거 수 비대칭 등을 계산해 넣으면 Judge 판정을 수치 근거로 고정할 수 있다.
-    """
-    return {}
-
-
 def judge_context(state: GraphState, report: str) -> dict:
     """보고서와 인용 근거의 출처 정보를 Judge 입력으로 만든다.
 
-    출처 다양성을 판단할 수 있도록 인용된 근거의 출처(제목·도메인)만 원자료로 전달하고,
-    분포 통계는 계산하지 않는다(build_judge_signals 확장 지점 참고).
+    출처 다양성을 판단할 수 있도록 인용된 근거의 제목과 도메인을 전달한다.
     """
     body, _ = split_reference(report)
     cited = set(extract_citations(body))
@@ -64,8 +53,6 @@ def judge_context(state: GraphState, report: str) -> dict:
         "cited_evidence_sources": catalog,
         "report_markdown": report,
     }
-    if signals := build_judge_signals(state, report):
-        context["signals"] = signals
     return context
 
 
