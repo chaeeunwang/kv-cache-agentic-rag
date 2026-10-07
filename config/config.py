@@ -35,6 +35,9 @@ class Settings(BaseSettings):
     embedding_batch_size: int = Field(default=8, gt=0)
     retrieval_top_k: int = Field(default=5, gt=0)
 
+    # 보고서 생성 출력 한도. 4096에서는 근거 ID가 많은 REFERENCE가 중간에 잘렸다(2026-10-07 실측).
+    report_max_tokens: int = Field(default=16384, gt=0)
+
     # 보고서 품질 평가 기준 (재시도 횟수 상한은 Supervisor policy.MAX_EVAL_RETRY가 관리)
     # 3~4장 주장 단위 중 근거 ID가 붙은 비율의 하한
     groundedness_min_ratio: float = Field(default=0.7, ge=0, le=1)

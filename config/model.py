@@ -6,12 +6,12 @@ from langchain_openai import ChatOpenAI
 from config import settings
 
 
-def get_chat_model() -> BaseChatModel:
+def get_chat_model(max_tokens: int = 4096) -> BaseChatModel:
     """환경 설정을 사용해 기본 LLM 클라이언트를 생성한다."""
     return ChatOpenAI(
         model=settings.openai_model,
         api_key=settings.openai_api_key,
-        max_tokens=4096,
+        max_tokens=max_tokens,
     )
 
 
