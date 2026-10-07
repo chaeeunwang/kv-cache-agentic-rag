@@ -3,6 +3,7 @@
 import json
 import re
 
+from config import settings
 from config.model import get_chat_model
 from service.agent.report.pdf import save_report_pdf
 from service.agent.report.prompt import REPORT_SYSTEM_PROMPT
@@ -18,7 +19,8 @@ RESULT_FIELDS = (
 
 def report_agent(state: GraphState) -> dict:
     """최종 보고서를 작성하고 실제 사용된 근거 ID만 반환한다."""
-    model = get_chat_model()
+    # 보고서는 본문과 REFERENCE가 길어 다른 에이전트보다 큰 출력 한도를 쓴다.
+    model = get_chat_model(max_tokens=settings.report_max_tokens)
     results = {field: state.get(field) for field in RESULT_FIELDS}
     evidence_ids = {
         evidence["id"]

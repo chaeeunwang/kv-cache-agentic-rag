@@ -42,6 +42,18 @@ KV cache 최적화 기술을 소프트웨어·하드웨어에서 각각 선정�
   - 근거가 부족하면 판단을 유보하고, 서로 다른 실험 조건의 수치를 직접 순위화하지 않습니다.
 - **실측 기반 규칙 보강**: 실제 API 실측에서 LLM이 연관 시장 전망을 대상 기술의 사실로 쓰거나, 근거를 한꺼번에 붙이거나, 입력 문서의 수치를 무관한 근거에 붙이는 문제가 나타났습니다. 이를 칸(기술×기준) 단위 호출, 근거 개수 상한, 짧은 참조키, 코드 생성 요약 같은 규칙으로 막았습니다.
 - **보고서 생성**: 관점별 평가·공개 정보 기반 TRL 추정·참고문헌을 Markdown과 PDF로 정리합니다.
+- **보고서 품질 평가 (Hybrid = 1안 룰베이스 + 2안 LLM Judge)**: 보고서가 생성되면 반드시 `report_evaluator` 노드를 거쳐 Supervisor로 돌아갑니다. 4개 항목 중 하나라도 미달이면 Supervisor가 FAIL 분석으로 재작업 대상을 골라 1회 재시도합니다.
+
+  | 평가 항목 | 방식 | 판정 기준 |
+  |---|---|---|
+  | Groundedness | 1안 룰베이스 | 본문 인용 ID가 모두 실제 수집 근거인지, 3~4장 주장 단위의 인용 비율 ≥ 70%, 본문 인용이 REFERENCE에 수록됐는지, 관점별 finding이 자기 근거만 참조하는지 |
+  | 관점 커버리지 | 1안 룰베이스 | 기술 성숙도·시장성·이해관계자·도메인 결과가 State에 있고 `error`가 아니며 두 기술을 모두 다루는지, 보고서에 SUMMARY·3.1~3.4·REFERENCE 목차가 있는지 |
+  | 중립성 | 2안 LLM Judge | 기술 추천·우열/순위 판정·조건이 다른 수치의 직접 비교가 없는지 (1~5점, 3점 이상 통과) |
+  | 편향 통제 | 2안 LLM Judge | 단일 출처 의존·유리한 근거 편중·한계 근거 누락이 없는지 (인용 근거의 출처 목록을 함께 제공, 1~5점, 3점 이상 통과) |
+
+  - **판정과 제어의 분리**: 평가 노드는 판정만 하고 재시도 여부·대상·횟수는 Supervisor가 정합니다. 표현 문제(중립성, 인용 표기)만 미달이면 보고서를 다시 쓰고, 근거 문제(Groundedness·편향 통제·커버리지)이면 `perspectives`에 적힌 관점을 재조사합니다. 재시도는 `eval_retry_count` 1회로 제한하고, 그래도 미달이면 미달 항목을 `warning`에 남기고 종료합니다.
+  - **제어 vs 페이로드**: State의 `eval_result`에는 항목별 통과 여부(bool)·`issues`(수정 지시)·`retry_instruction`(미달 요약)·`perspectives`(보강 관점)만 둡니다. 점수·사유·위반 문장·미인용 주장 등 상세 진단은 `trace_id`와 함께 `result/eval_{n}.json`에 저장해 체크포인트가 커지지 않게 합니다.
+  - **확장 지점**: 출처 분포·stance 분포 같은 룰 기반 보조 신호를 Judge 입력에 넣을 수 있도록 `build_judge_signals()`를 남겨두었습니다(현재 비활성, 판정은 LLM Judge 단독).
 
 ## Tech Stack
 
@@ -50,7 +62,7 @@ KV cache 최적화 기술을 소프트웨어·하드웨어에서 각각 선정�
 | Language | Python 3.11–3.12 |
 | Framework | LangGraph, LangChain |
 | LLM / Generator | `gpt-4.1-mini` 기본값 (`OPENAI_MODEL`, 기술 조사는 `TECHNICAL_MODEL`) |
-| LLM / Judge | 평가 종합의 `gpt-4.1-mini` 품질 점검. 별도 원문 대조 Judge는 미적용 |
+| LLM / Judge | 보고서 품질 평가 `gpt-4.1` (`JUDGE_MODEL`, temperature 0). 생성 모델과 분리해 자기 출력 선호 편향을 줄임 |
 | Retrieval | FAISS `IndexFlatIP`, cosine 유사도. 기술별(sw·hw) 인덱스와 공통 문서 인덱스를 합쳐 top-5. `needs_review` 청크는 기본 제외 |
 | Retrieval Metrics | 임베딩 선정 실험(설계서 2.7): BGE-M3 dev Recall@5 75.0%·MRR@10 0.651, test Recall@5 83.3%·MRR@10 0.681 |
 | Embedding | `BAAI/bge-m3` (1,024차원 dense, L2 정규화) — Sentence Transformers |
@@ -121,11 +133,12 @@ flowchart TD
 │   ├── agent/tavily/            # 웹 검색·질의 템플릿·근거 검증
 │   ├── agent/synthesis/         # 평가 종합
 │   ├── agent/report/            # 보고서 생성
+│   ├── agent/evaluation/        # 보고서 품질 평가 (룰베이스·LLM Judge)
 │   ├── retrieval/               # 공통 논문 인덱스 로딩·검색
 │   └── schema/                  # 공통 State와 결과 형식
 ├── tests/                       # 회귀 테스트와 검색 응답 fixture
 ├── scripts/                     # 실제 API 점검 스크립트
-├── result/                      # 실행 결과 (state.json, report.md, report.pdf)
+├── result/                      # 실행 결과 (state.json, report.md, report.pdf, eval_{n}.json)
 ├── run_agent.py                 # 전체 그래프 실행 진입점
 └── README.md
 ```

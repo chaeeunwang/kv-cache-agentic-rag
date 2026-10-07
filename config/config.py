@@ -17,6 +17,8 @@ class Settings(BaseSettings):
     openai_api_key: str = ""
     tavily_api_key: str = ""
     openai_model: str = "gpt-4.1-mini"
+    # 생성 모델과 분리한 보고서 평가용 Judge 모델 (자기 출력 선호 편향 완화)
+    judge_model: str = "gpt-4.1"
     openai_base_url: str | None = None
     embedding_device: str | None = None
     pdf_font: str | None = None
@@ -32,6 +34,15 @@ class Settings(BaseSettings):
     embedding_dimension: int | None = Field(default=None, gt=0)  # 실제 출력에서 결정, 지정하면 일치 검사
     embedding_batch_size: int = Field(default=8, gt=0)
     retrieval_top_k: int = Field(default=5, gt=0)
+
+    # 보고서 생성 출력 한도. 4096에서는 근거 ID가 많은 REFERENCE가 중간에 잘렸다(2026-10-07 실측).
+    report_max_tokens: int = Field(default=16384, gt=0)
+
+    # 보고서 품질 평가 기준 (재시도 횟수 상한은 Supervisor policy.MAX_EVAL_RETRY가 관리)
+    # 3~4장 주장 단위 중 근거 ID가 붙은 비율의 하한
+    groundedness_min_ratio: float = Field(default=0.7, ge=0, le=1)
+    # LLM Judge 1~5점 중 통과 하한
+    judge_pass_score: int = Field(default=3, ge=1, le=5)
 
     @field_validator("faiss_index_dir", "preprocessed_chunks", "document_manifest")
     @classmethod
